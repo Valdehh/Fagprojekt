@@ -1,2 +1,5 @@
 Data/
-image_matrix.npz
+encoder_decoder_structure.py
+*.npz
+*.npy
+*.png
