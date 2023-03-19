@@ -19,7 +19,7 @@ for i in range(len(data)):
         "Data", "singh_cp_pipeline_singlecell_images", data[i, 2], data[i, 4])
     if os.path.exists(file_path):
         image = np.load(file_path)
-        min_val, max_val = np.min(image). np.max(image)
+        min_val, max_val = np.min(image), np.max(image)
         pixel_range = max_val - min_val
         scaled_pixels = (image - min_val) / pixel_range
         scaled_pixels *= 255
