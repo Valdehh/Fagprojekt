@@ -14,6 +14,7 @@ x1 = np.load(os.path.join(
 
 X = []
 y = []
+compound = []
 for i in range(len(data)):
     file_path = os.path.join(
         "Data", "singh_cp_pipeline_singlecell_images", data[i, 2], data[i, 4])
@@ -26,11 +27,12 @@ for i in range(len(data)):
         converted_image = np.round(scaled_pixels).astype(np.uint8)
         X.append(converted_image)
         y.append(data[i, -1])
+        compound.append(data[i, -3])
 
 X = np.array(X)
 y = np.array(y)
 
-np.savez("image_matrix.npz", images=X, labels=y)
+np.savez("image_matrix.npz", images=X, labels=y, compound=compound)
 
 print(X.shape)
 print(y.shape)
