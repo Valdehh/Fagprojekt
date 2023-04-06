@@ -1,5 +1,7 @@
 Data/
+MNIST/
 encoder_decoder_structure.py
 *.npz
 *.npy
 *.png
+*.pt
