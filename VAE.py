@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 import torchvision
+from tqdm import tqdm
 
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -10,9 +11,10 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def log_Categorical(x, theta, num_classes):
     x_one_hot = nn.functional.one_hot(
-        x.long(), num_classes=num_classes).view(-1, num_classes)
-    log_p = torch.log(theta)*x_one_hot
-    return torch.sum(log_p, dim=-1)
+        x.flatten().long(), num_classes=num_classes)
+    log_p = torch.sum(
+        x_one_hot * torch.log(torch.clamp(theta[0], 10e-8, 1.-10e-8)), dim=-1)
+    return log_p
 
 
 def log_Normal(x, mu, log_var):
@@ -105,9 +107,9 @@ class VAE():
         theta = self.decode(z)
         log_posterior = log_Normal(z, mu, log_var)
         log_prior = log_standard_Normal(z)
-        log_con_like = log_Categorical(x, theta, self.pixel_range)
+        log_con_like = log_Categorical(x, theta[0], self.pixel_range)
         reconstruction_error = torch.mean(log_con_like)
-        regularizer = torch.mean(log_posterior - log_prior)
+        regularizer = - torch.mean(log_posterior - log_prior)
         elbo = -(reconstruction_error + regularizer)
         return elbo, reconstruction_error, regularizer
 
@@ -116,8 +118,8 @@ class VAE():
         optimizer_decoder = torch.optim.SGD(self.decoder.parameters(), lr=lr)
         reconstruction_errors = []
         regularizers = []
-        for epoch in range(epochs):
-            for i in range(0, self.data_length, batch_size):
+        for epoch in tqdm(range(epochs)):
+            for i in tqdm(range(0, self.data_length, batch_size)):
                 x = X[i:i+batch_size].to(device)
                 optimizer_encoder.zero_grad()
                 optimizer_decoder.zero_grad()
@@ -130,16 +132,16 @@ class VAE():
             if epochs == epoch - 1:
                 latent_space = self.reparameterization(self.encode(x))
             print(
-                f"Epoch: {epoch}, ELBO: {elbo}, Reconstruction Error: {reconstruction_error}, Regularizer: {regularizer}")
+                f"Epoch: {epoch+1}, ELBO: {elbo}, Reconstruction Error: {reconstruction_error}, Regularizer: {regularizer}")
         return self.encoder, self.decoder, reconstruction_errors, regularizers, latent_space
 
 
 def generate_image(decoder, latent_dim, output_dim, channels):
     z = torch.normal(mean=0, std=torch.ones(1, latent_dim))
     theta = decoder.forward(z)
-    theta = theta.argmax(dim=1)
-    theta = theta.view(channels, output_dim, output_dim)
-    theta = theta.detach().numpy()
+    theta = theta[0].detach().numpy()
+    theta = theta.argmax(axis=1)
+    theta = theta.reshape((channels, output_dim, output_dim))
     return theta
 
 
