@@ -9,9 +9,23 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
 def log_Categorical(x, theta, num_classes):
-    x_one_hot = nn.functional.one_hot(x.long(), num_classes=num_classes)
+    x_one_hot = nn.functional.one_hot(
+        x.long(), num_classes=num_classes).view(-1, num_classes)
     log_p = torch.log(theta)*x_one_hot
-    return torch.sum(log_p, dim=1)
+    return torch.sum(log_p, dim=-1)
+
+
+def log_Normal(x, mu, log_var):
+    D = x.shape[1]
+    log_p = -.5 * D * ((x - mu) ** 2. * torch.exp(-log_var) +
+                       log_var + np.log(2 * np.pi))
+    return log_p
+
+
+def log_standard_Normal(x):
+    D = x.shape[1]
+    log_p = -.5 * D * (x ** 2. + np.log(2 * np.pi))
+    return log_p
 
 
 class encoder(nn.Module):
@@ -68,13 +82,14 @@ class VAE():
         self.encoder = encoder(input_dim, latent_dim, channels)
         self.decoder = decoder(input_dim, latent_dim, channels)
         self.pixel_range = pixel_range
+        self.latent_dim = latent_dim
 
         self.data_length = len(X)
         self.prior = torch.distributions.MultivariateNormal(
             loc=torch.zeros(latent_dim), covariance_matrix=torch.eye(latent_dim))
 
     def encode(self, x):
-        mu, std = torch.split(self.encoder.forward(x), 2, dim=1)
+        mu, std = torch.split(self.encoder.forward(x), self.latent_dim, dim=1)
         return mu, std
 
     def reparameterization(self, mu, log_var, eps):
@@ -88,9 +103,8 @@ class VAE():
         mu, log_var = self.encode(x)
         z = self.reparameterization(mu, log_var, eps)
         theta = self.decode(z)
-        log_posterior = torch.sum(torch.log(torch.distributions.MultivariateNormal(
-            loc=mu, covariance_matrix=torch.diag(torch.exp(log_var)))), dim=1)
-        log_prior = torch.sum(torch.log(self.prior), dim=1)
+        log_posterior = log_Normal(z, mu, log_var)
+        log_prior = log_standard_Normal(z)
         log_con_like = log_Categorical(x, theta, self.pixel_range)
         reconstruction_error = torch.mean(log_con_like)
         regularizer = torch.mean(log_posterior - log_prior)
@@ -124,7 +138,7 @@ def generate_image(decoder, latent_dim, output_dim, channels):
     z = torch.normal(mean=0, std=torch.ones(1, latent_dim))
     theta = decoder.forward(z)
     theta = theta.argmax(dim=1)
-    theta = theta.view(3, output_dim, output_dim)
+    theta = theta.view(channels, output_dim, output_dim)
     theta = theta.detach().numpy()
     return theta
 
@@ -136,7 +150,7 @@ batch_size = 1
 trainset = torchvision.datasets.MNIST(
     root='./MNIST', train=True, download=True, transform=None)
 X = trainset.data.numpy()
-X = torch.tensor(X[:1000])
+X = torch.tensor(X[:1000], dtype=torch.float32)
 
 # X = np.load("image_matrix.npz")["images"][:1000]
 
