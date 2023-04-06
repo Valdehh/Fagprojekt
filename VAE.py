@@ -12,7 +12,7 @@ def log_Categorical(x, theta, num_classes):
     return torch.sum(log_p, dim=1)
 
 class encoder(nn.Module):
-    def __init__(self, input_dim, latent_dim) -> None:
+    def __init__(self, input_dim, latent_dim):
         super(encoder, self).__init__()
         self.input_dim=input_dim
         self.conv1 = nn.Conv2d(3, 16, kernel_size=5, padding="same")
@@ -35,7 +35,7 @@ class decoder(nn.Module):
         self.input_dim=input_dim
         self.input = nn.Linear(latent_dim, 32 * self.input_dim * self.input_dim) 
         self.conv1 = nn.ConvTranspose2d(
-            32, 16, kernel_size=5, stride=1, padding=5 - (self.input_dim % 5)),
+            32, 16, kernel_size=5, stride=1, padding=5 - (self.input_dim % 5))
         self.conv2 = nn.ConvTranspose2d(
             16, 3, kernel_size=5, stride=1, padding=5 - (self.input_dim % 5))
         self.fully_connected = nn.Linear(3 * self.input_dim * self.input_dim, 3 * self.input_dim * self.input_dim * 256)
@@ -87,4 +87,35 @@ class VAE():
         reconstruction_error = torch.mean(log_con_like)
         regularizer = torch.mean(log_posterior - log_prior)
         elbo = -(reconstruction_error + regularizer)
-        
+        return elbo, reconstruction_error, regularizer
+
+
+    def train(self, X, epochs, batch_size, lr=0.001):
+        optimizer_encoder = torch.optim.SGD(self.encoder.parameters(), lr=lr)
+        optimizer_decoder = torch.optim.SGD(self.decoder.parameters(), lr=lr)
+        reconstruction_errors = []
+        regularizers = []
+        for epoch in range(epochs):
+            for i in range(0, self.data_length, batch_size):
+                x = X[i:i+batch_size].to(device)
+                optimizer_encoder.zero_grad()
+                optimizer_decoder.zero_grad()
+                elbo, reconstruction_error, regularizer = self.ELBO(x)
+                reconstruction_errors.append(reconstruction_error)
+                regularizers.append(regularizer)
+                elbo.backward()
+                optimizer_encoder.step()
+                optimizer_decoder.step()
+            print(f"Epoch: {epoch}, ELBO: {elbo}, Reconstruction Error: {reconstruction_error}, Regularizer: {regularizer}")
+        return self.encoder, self.decoder, reconstruction_errors, regularizers
+
+
+
+def generate_image(decoder, latent_dim, output_dim):
+    z = torch.normal(mean = 0, std = torch.ones(1, latent_dim))
+    theta = decoder.forward(z)
+    theta = theta.argmax(dim=1)
+    theta = theta.view(3, output_dim, output_dim)
+    theta = theta.detach().numpy()
+    plt.imshow(theta)
+    plt.show()
