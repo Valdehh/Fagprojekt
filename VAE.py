@@ -13,20 +13,20 @@ def log_Categorical(x, theta, num_classes):
     x_one_hot = nn.functional.one_hot(
         x.flatten().long(), num_classes=num_classes)
     log_p = torch.sum(
-        x_one_hot * torch.log(torch.clamp(theta[0], 10e-8, 1.-10e-8)), dim=-1)
+        x_one_hot * torch.log(torch.clamp(theta, 10e-8, 1.-10e-8)), dim=-1)
     return log_p
 
 
 def log_Normal(x, mu, log_var):
-    D = x.shape[1]
-    log_p = -.5 * D * ((x - mu) ** 2. * torch.exp(-log_var) +
-                       log_var + np.log(2 * np.pi))
+    D = x.shape[0]
+    log_p = -.5 * ((x - mu) ** 2. * torch.exp(-log_var) +
+                   log_var + D * np.log(2 * np.pi))
     return log_p
 
 
 def log_standard_Normal(x):
-    D = x.shape[1]
-    log_p = -.5 * D * (x ** 2. + np.log(2 * np.pi))
+    D = x.shape[0]
+    log_p = -.5 * (x ** 2. + D * np.log(2 * np.pi))
     return log_p
 
 
@@ -79,56 +79,56 @@ class decoder(nn.Module):
         return x
 
 
-class VAE():
+class VAE(nn.Module):
     def __init__(self, X, pixel_range, latent_dim, input_dim, channels):
+        super(VAE, self).__init__()
         self.encoder = encoder(input_dim, latent_dim, channels)
         self.decoder = decoder(input_dim, latent_dim, channels)
         self.pixel_range = pixel_range
         self.latent_dim = latent_dim
 
         self.data_length = len(X)
-        self.prior = torch.distributions.MultivariateNormal(
-            loc=torch.zeros(latent_dim), covariance_matrix=torch.eye(latent_dim))
+        self.eps = torch.normal(mean=0, std=torch.ones(latent_dim))
+        # self.prior = torch.distributions.MultivariateNormal(loc=torch.zeros(latent_dim), covariance_matrix=torch.eye(latent_dim))
 
     def encode(self, x):
         mu, std = torch.split(self.encoder.forward(x), self.latent_dim, dim=1)
         return mu, std
 
-    def reparameterization(self, mu, log_var, eps):
-        return mu + torch.exp(0.5*log_var) * eps
+    def reparameterization(self, mu, log_var):
+        return mu + torch.exp(0.5*log_var) * self.eps
 
     def decode(self, z):
         return self.decoder.forward(z)
 
     def ELBO(self, x):
-        eps = torch.normal(mean=0, std=torch.ones(len(x)))
         mu, log_var = self.encode(x)
-        z = self.reparameterization(mu, log_var, eps)
+        z = self.reparameterization(mu, log_var)
         theta = self.decode(z)
         log_posterior = log_Normal(z, mu, log_var)
         log_prior = log_standard_Normal(z)
-        log_con_like = log_Categorical(x, theta[0], self.pixel_range)
-        reconstruction_error = torch.mean(log_con_like)
-        regularizer = - torch.mean(log_posterior - log_prior)
-        elbo = -(reconstruction_error + regularizer)
+        log_con_like = log_Categorical(x, theta, self.pixel_range)
+        reconstruction_error = torch.sum(log_con_like, dim=-1)
+        regularizer = - torch.sum(log_posterior - log_prior, dim=-1)
+        elbo = - torch.mean(reconstruction_error + regularizer)
+        print(elbo, reconstruction_error, regularizer)
         return elbo, reconstruction_error, regularizer
 
-    def train(self, X, epochs, batch_size, lr=0.001):
-        optimizer_encoder = torch.optim.SGD(self.encoder.parameters(), lr=lr)
-        optimizer_decoder = torch.optim.SGD(self.decoder.parameters(), lr=lr)
+    def train_VAE(self, X, epochs, batch_size, lr=10e-10):
+        parameters = [param for param in self.parameters()
+                      if param.requires_grad == True]
+        optimizer = torch.optim.SGD(parameters, lr=lr)
         reconstruction_errors = []
         regularizers = []
         for epoch in tqdm(range(epochs)):
             for i in tqdm(range(0, self.data_length, batch_size)):
                 x = X[i:i+batch_size].to(device)
-                optimizer_encoder.zero_grad()
-                optimizer_decoder.zero_grad()
+                optimizer.zero_grad()
                 elbo, reconstruction_error, regularizer = self.ELBO(x)
                 reconstruction_errors.append(reconstruction_error)
                 regularizers.append(regularizer)
-                elbo.backward()
-                optimizer_encoder.step()
-                optimizer_decoder.step()
+                elbo.backward(retain_graph=True)
+                optimizer.step()
             if epochs == epoch + 1:
                 latent_space = self.reparameterization(self.encode(x))
             print(
@@ -145,8 +145,8 @@ def generate_image(decoder, latent_dim, output_dim, channels):
     return theta
 
 
-latent_dim = 200
-epochs = 10
+latent_dim = 5
+epochs = 5
 batch_size = 1
 
 trainset = torchvision.datasets.MNIST(
@@ -162,7 +162,7 @@ channels = 1
 
 VAE = VAE(X, pixel_range=pixel_range,
           latent_dim=latent_dim, input_dim=input_dim, channels=channels)
-encoder, decoder, reconstruction_errors, regularizers, latent_space = VAE.train(
+encoder, decoder, reconstruction_errors, regularizers, latent_space = VAE.train_VAE(
     X=X, epochs=epochs, batch_size=batch_size)
 torch.save(encoder, "encoder.pt")
 torch.save(decoder, "decoder.pt")
