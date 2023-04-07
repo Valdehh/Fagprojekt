@@ -129,7 +129,7 @@ class VAE():
                 elbo.backward()
                 optimizer_encoder.step()
                 optimizer_decoder.step()
-            if epochs == epoch - 1:
+            if epochs == epoch + 1:
                 latent_space = self.reparameterization(self.encode(x))
             print(
                 f"Epoch: {epoch+1}, ELBO: {elbo}, Reconstruction Error: {reconstruction_error}, Regularizer: {regularizer}")
