@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
-import torchvision
+from torchvision import datasets, transforms
 from tqdm import tqdm
 
 
@@ -13,19 +13,19 @@ def log_Categorical(x, theta, num_classes):
     x_one_hot = nn.functional.one_hot(
         x.flatten(start_dim=1, end_dim=-1).long(), num_classes=num_classes)
     log_p = torch.sum(
-        x_one_hot * torch.log(torch.clamp(theta, 10e-8, 1.-10e-8)), dim=-1)
+        x_one_hot * torch.log(torch.clamp(theta, 10e-4, 1.-10e-4)), dim=-1)
     return log_p
 
 
 def log_Normal(x, mu, log_var):
-    D = x.shape[0]
+    D = x.shape[-1]
     log_p = -.5 * ((x - mu) ** 2. * torch.exp(-log_var) +
                    log_var + D * np.log(2 * np.pi))
     return log_p
 
 
 def log_standard_Normal(x):
-    D = x.shape[0]
+    D = x.shape[-1]
     log_p = -.5 * (x ** 2. + D * np.log(2 * np.pi))
     return log_p
 
@@ -92,8 +92,9 @@ class VAE(nn.Module):
         # self.prior = torch.distributions.MultivariateNormal(loc=torch.zeros(latent_dim), covariance_matrix=torch.eye(latent_dim))
 
     def encode(self, x):
-        mu, std = torch.split(self.encoder.forward(x), self.latent_dim, dim=1)
-        return mu, std
+        mu, log_var = torch.split(
+            self.encoder.forward(x), self.latent_dim, dim=1)
+        return mu, log_var
 
     def reparameterization(self, mu, log_var):
         return mu + torch.exp(0.5*log_var) * self.eps
@@ -108,10 +109,10 @@ class VAE(nn.Module):
         log_posterior = log_Normal(z, mu, log_var)
         log_prior = log_standard_Normal(z)
         log_con_like = log_Categorical(x, theta, self.pixel_range)
-        reconstruction_error = torch.sum(log_con_like, dim=-1)
-        regularizer = - torch.sum(log_posterior - log_prior, dim=-1)
-        elbo = - torch.mean(reconstruction_error + regularizer)
-        print(elbo, reconstruction_error, regularizer)
+        reconstruction_error = (torch.sum(log_con_like, dim=-1)).mean()
+        regularizer = (- torch.sum(log_posterior - log_prior, dim=-1)).mean()
+        elbo = - (reconstruction_error + regularizer)
+        # print(elbo, reconstruction_error, regularizer)
         return elbo, reconstruction_error, regularizer
 
     def train_VAE(self, X, epochs, batch_size, lr=10e-16):
@@ -125,67 +126,78 @@ class VAE(nn.Module):
                 x = X[i:i+batch_size].to(device)
                 optimizer.zero_grad()
                 elbo, reconstruction_error, regularizer = self.ELBO(x)
-                reconstruction_errors.append(reconstruction_error)
-                regularizers.append(regularizer)
+                reconstruction_errors.append(
+                    reconstruction_error.detach().numpy())
+                regularizers.append(regularizer.detach().numpy())
                 elbo.backward(retain_graph=True)
                 optimizer.step()
             if epochs == epoch + 1:
-                latent_space = self.reparameterization(self.encode(x))
+                mu, log_var = self.encode(x)
+                latent_space = self.reparameterization(mu, log_var)
             print(
                 f"Epoch: {epoch+1}, ELBO: {elbo}, Reconstruction Error: {reconstruction_error}, Regularizer: {regularizer}")
         return self.encoder, self.decoder, reconstruction_errors, regularizers, latent_space
 
 
-def generate_image(decoder, latent_dim, output_dim, channels):
-    z = torch.normal(mean=0, std=torch.ones(1, latent_dim))
+def generate_image(X, encoder, decoder, latent_dim, channels, input_dim):
+    X = X.to(device)
+    mu, log_var = torch.split(encoder.forward(X), latent_dim, dim=1)
+    eps = torch.normal(mean=0, std=torch.ones(latent_dim))
+    z = mu + torch.exp(0.5*log_var) * eps
     theta = decoder.forward(z)
-    theta = theta[0].detach().numpy()
-    theta = theta.argmax(axis=1)
-    theta = theta.reshape((channels, output_dim, output_dim))
-    return theta
+    image = torch.argmax(theta, dim=-1)
+    image = image.reshape((channels, input_dim, input_dim))
+    image = torch.permute(image, (1, 2, 0))
+    image = image.cpu().numpy()
+    return image
 
 
 latent_dim = 50
 epochs = 5
-batch_size = 5
+batch_size = 10
 
 pixel_range = 256
 input_dim = 28
 channels = 1
 
 train_size = 1000
+test_size = 1000
 
-trainset = torchvision.datasets.MNIST(
+trainset = datasets.MNIST(
     root='./MNIST', train=True, download=True, transform=None)
-X = trainset.data[:train_size]
-X = torch.reshape(X, (train_size, channels, input_dim, input_dim))
+testset = datasets.MNIST(
+    root='./MNIST', train=False, download=True, transform=None)
+X_train = trainset.data[:train_size].reshape(
+    (train_size, channels, input_dim, input_dim)).float()
+X_test = testset.data[:test_size].reshape(
+    (test_size, channels, input_dim, input_dim)).float()
 
 # X = np.load("image_matrix.npz")["images"][:1000]
 
-VAE = VAE(X, pixel_range=pixel_range,
-          latent_dim=latent_dim, input_dim=input_dim, channels=channels)
-encoder, decoder, reconstruction_errors, regularizers, latent_space = VAE.train_VAE(
-    X=X, epochs=epochs, batch_size=batch_size)
-torch.save(encoder, "encoder.pt")
-torch.save(decoder, "decoder.pt")
+VAE = VAE(X_train, pixel_range=pixel_range,
+          latent_dim=latent_dim, input_dim=input_dim, channels=channels).to(device)
+encoder_VAE, decoder_VAE, reconstruction_errors, regularizers, latent_space = VAE.train_VAE(
+    X=X_train, epochs=epochs, batch_size=batch_size)
 
-np.savez("latent_space.npz", latent_space=latent_space)
+torch.save(encoder_VAE, "encoder.pt")
+torch.save(decoder_VAE, "decoder.pt")
 
-plt.plot(reconstruction_errors, label="Reconstruction Error")
-plt.plot(regularizers, label="Regularizer")
+np.savez("latent_space.npz", latent_space=latent_space.detach().numpy())
+
+plt.plot(np.arange(0, len(reconstruction_errors), 1),
+         reconstruction_errors, label="Reconstruction Error")
+plt.plot(np.arange(0, len(regularizers), 1), regularizers, label="Regularizer")
 plt.xlabel("Epochs")
-plt.xticks(ticks=np.arange(0, epochs*len(X), len(X)),
-           labels=np.arange(0, epochs, 1))
+plt.xticks(ticks=np.arange(0, (epochs+1)*len(X_train)//batch_size, len(X_train)//batch_size),
+           labels=np.arange(0, epochs+1, 1))
 plt.title("ELBO Components")
 plt.legend()
 plt.show()
 
-output_dim = 28
-
 generated_images = []
-for _ in range(9):
-    image = generate_image(
-        decoder=decoder, latent_dim=latent_dim, output_dim=output_dim, chanels=channels)
+for i in range(9):
+    image = generate_image(X_test[i], encoder_VAE, decoder=decoder_VAE,
+                           latent_dim=latent_dim, channels=channels, input_dim=input_dim)
     generated_images.append(image)
 
 fig, ax = plt.subplots(3, 3)
@@ -194,5 +206,5 @@ for i, image in enumerate(generated_images):
     ax[i].imshow(image)
     ax[i].set_xticks([])
     ax[i].set_yticks([])
-plt.title("Generated images")
+fig.suptitle("Generated images")
 plt.show()
