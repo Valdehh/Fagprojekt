@@ -11,7 +11,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def log_Categorical(x, theta, num_classes):
     x_one_hot = nn.functional.one_hot(
-        x.flatten().long(), num_classes=num_classes)
+        x.flatten(start_dim=1, end_dim=-1).long(), num_classes=num_classes)
     log_p = torch.sum(
         x_one_hot * torch.log(torch.clamp(theta, 10e-8, 1.-10e-8)), dim=-1)
     return log_p
@@ -114,7 +114,7 @@ class VAE(nn.Module):
         print(elbo, reconstruction_error, regularizer)
         return elbo, reconstruction_error, regularizer
 
-    def train_VAE(self, X, epochs, batch_size, lr=10e-10):
+    def train_VAE(self, X, epochs, batch_size, lr=10e-16):
         parameters = [param for param in self.parameters()
                       if param.requires_grad == True]
         optimizer = torch.optim.SGD(parameters, lr=lr)
@@ -145,20 +145,22 @@ def generate_image(decoder, latent_dim, output_dim, channels):
     return theta
 
 
-latent_dim = 5
+latent_dim = 50
 epochs = 5
-batch_size = 1
-
-trainset = torchvision.datasets.MNIST(
-    root='./MNIST', train=True, download=True, transform=None)
-X = trainset.data.numpy()
-X = torch.tensor(X[:1000], dtype=torch.float32)
-
-# X = np.load("image_matrix.npz")["images"][:1000]
+batch_size = 5
 
 pixel_range = 256
 input_dim = 28
 channels = 1
+
+train_size = 1000
+
+trainset = torchvision.datasets.MNIST(
+    root='./MNIST', train=True, download=True, transform=None)
+X = trainset.data[:train_size]
+X = torch.reshape(X, (train_size, channels, input_dim, input_dim))
+
+# X = np.load("image_matrix.npz")["images"][:1000]
 
 VAE = VAE(X, pixel_range=pixel_range,
           latent_dim=latent_dim, input_dim=input_dim, channels=channels)
