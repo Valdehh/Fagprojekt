@@ -88,7 +88,7 @@ class VAE(nn.Module):
         self.latent_dim = latent_dim
 
         self.data_length = len(X)
-        self.eps = torch.normal(mean=0, std=torch.ones(latent_dim))
+        self.eps = torch.normal(mean=0, std=torch.ones(latent_dim)).to(device)
         # self.prior = torch.distributions.MultivariateNormal(loc=torch.zeros(latent_dim), covariance_matrix=torch.eye(latent_dim))
 
     def encode(self, x):
@@ -127,8 +127,8 @@ class VAE(nn.Module):
                 optimizer.zero_grad()
                 elbo, reconstruction_error, regularizer = self.ELBO(x)
                 reconstruction_errors.append(
-                    reconstruction_error.detach().numpy())
-                regularizers.append(regularizer.detach().numpy())
+                    reconstruction_error.detach().cpu().numpy())
+                regularizers.append(regularizer.detach().cpu().numpy())
                 elbo.backward(retain_graph=True)
                 optimizer.step()
             if epochs == epoch + 1:
