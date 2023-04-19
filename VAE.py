@@ -115,10 +115,10 @@ class VAE(nn.Module):
         # print(elbo, reconstruction_error, regularizer)
         return elbo, reconstruction_error, regularizer
 
-    def train_VAE(self, X, epochs, batch_size, lr=10e-16):
+    def train_VAE(self, X, epochs, batch_size, lr=10e-10):
         parameters = [param for param in self.parameters()
                       if param.requires_grad == True]
-        optimizer = torch.optim.SGD(parameters, lr=lr)
+        optimizer = torch.optim.Adam(parameters, lr=lr)
         reconstruction_errors = []
         regularizers = []
         for epoch in tqdm(range(epochs)):
@@ -134,7 +134,7 @@ class VAE(nn.Module):
             if epochs == epoch + 1:
                 mu, log_var = self.encode(x)
                 latent_space = self.reparameterization(mu, log_var)
-            print(
+            tqdm.write(
                 f"Epoch: {epoch+1}, ELBO: {elbo}, Reconstruction Error: {reconstruction_error}, Regularizer: {regularizer}")
         return self.encoder, self.decoder, reconstruction_errors, regularizers, latent_space
 
@@ -172,17 +172,19 @@ X_train = trainset.data[:train_size].reshape(
 X_test = testset.data[:test_size].reshape(
     (test_size, channels, input_dim, input_dim)).float()
 
+
 # X = np.load("image_matrix.npz")["images"][:1000]
+# X = torch.tensor(X, dtype=torch.float32).permute(0, 3, 1, 2)
 
 VAE = VAE(X_train, pixel_range=pixel_range,
           latent_dim=latent_dim, input_dim=input_dim, channels=channels).to(device)
 encoder_VAE, decoder_VAE, reconstruction_errors, regularizers, latent_space = VAE.train_VAE(
     X=X_train, epochs=epochs, batch_size=batch_size)
 
-torch.save(encoder_VAE, "encoder.pt")
-torch.save(decoder_VAE, "decoder.pt")
+torch.save(encoder_VAE, "encoder_VAE.pt")
+torch.save(decoder_VAE, "decoder_VAE.pt")
 
-np.savez("latent_space.npz", latent_space=latent_space.detach().numpy())
+np.savez("latent_space_VAE.npz", latent_space=latent_space.detach().numpy())
 
 plt.plot(np.arange(0, len(reconstruction_errors), 1),
          reconstruction_errors, label="Reconstruction Error")
