@@ -39,6 +39,10 @@ class encoder(nn.Module):
         self.fully_connected = nn.Linear(
             32 * self.input_dim * self.input_dim, 2 * latent_dim)
 
+        nn.init.xavier_normal_(self.conv1.weight)
+        nn.init.xavier_normal_(self.conv2.weight)
+        nn.init.xavier_normal_(self.fully_connected.weight)
+
     def forward(self, x):
         x = self.conv1(x)
         x = nn.functional.relu(x)
@@ -63,6 +67,11 @@ class decoder(nn.Module):
         self.fully_connected = nn.Linear(
             channels * self.input_dim * self.input_dim, channels * self.input_dim * self.input_dim * 256)
         self.softmax = nn.Softmax(dim=1)
+
+        nn.init.xavier_normal_(self.input.weight)
+        nn.init.xavier_normal_(self.conv1.weight)
+        nn.init.xavier_normal_(self.conv2.weight)
+        nn.init.xavier_normal_(self.fully_connected.weight)
 
     def forward(self, x):
         x = self.input(x)
@@ -186,11 +195,12 @@ torch.save(decoder_VAE, "decoder_VAE.pt")
 
 np.savez("latent_space_VAE.npz", latent_space=latent_space.detach().numpy())
 
-plt.plot(np.arange(0, len(reconstruction_errors), 1),
+plt.plot(np.arange(0, len(reconstruction_errors), 1) + 1,
          reconstruction_errors, label="Reconstruction Error")
-plt.plot(np.arange(0, len(regularizers), 1), regularizers, label="Regularizer")
+plt.plot(np.arange(0, len(regularizers), 1) +
+         1, regularizers, label="Regularizer")
 plt.xlabel("Epochs")
-plt.xticks(ticks=np.arange(0, (epochs+1)*len(X_train)//batch_size, len(X_train)//batch_size),
+plt.xticks(ticks=np.arange(0, (epochs+1)*len(X_train)/batch_size, len(X_train)/batch_size),
            labels=np.arange(0, epochs+1, 1))
 plt.title("ELBO Components")
 plt.legend()
