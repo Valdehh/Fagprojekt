@@ -136,8 +136,8 @@ class VAE(nn.Module):
                 optimizer.zero_grad()
                 elbo, reconstruction_error, regularizer = self.ELBO(x)
                 reconstruction_errors.append(
-                    reconstruction_error.detach().cpu().numpy())
-                regularizers.append(regularizer.detach().cpu().numpy())
+                    reconstruction_error.detach().numpy())
+                regularizers.append(regularizer.detach().numpy())
                 elbo.backward(retain_graph=True)
                 optimizer.step()
             tqdm.write(
@@ -148,6 +148,8 @@ class VAE(nn.Module):
 
 
 def generate_image(X, encoder, decoder, latent_dim, channels, input_dim):
+    encoder.eval()
+    decoder.eval()
     X = X.to(device)
     mu, log_var = torch.split(encoder.forward(X), latent_dim, dim=1)
     eps = torch.normal(mean=0, std=torch.ones(latent_dim))
@@ -156,7 +158,7 @@ def generate_image(X, encoder, decoder, latent_dim, channels, input_dim):
     image = torch.argmax(theta, dim=-1)
     image = image.reshape((channels, input_dim, input_dim))
     image = torch.permute(image, (1, 2, 0))
-    image = image.cpu().numpy()
+    image = image.numpy()
     return image
 
 
@@ -194,10 +196,9 @@ torch.save(decoder_VAE, "decoder_VAE.pt")
 
 np.savez("latent_space_VAE.npz", latent_space=latent_space.detach().numpy())
 
-plt.plot(np.arange(0, len(reconstruction_errors), 1) + 1,
+plt.plot(np.arange(0, len(reconstruction_errors), 1),
          reconstruction_errors, label="Reconstruction Error")
-plt.plot(np.arange(0, len(regularizers), 1) +
-         1, regularizers, label="Regularizer")
+plt.plot(np.arange(0, len(regularizers), 1), regularizers, label="Regularizer")
 plt.xlabel("Epochs")
 plt.xticks(ticks=np.arange(0, (epochs+1)*len(X_train)/batch_size, len(X_train)/batch_size),
            labels=np.arange(0, epochs+1, 1))
