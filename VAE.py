@@ -13,7 +13,7 @@ def log_Categorical(x, theta, num_classes):
     x_one_hot = nn.functional.one_hot(
         x.flatten(start_dim=1, end_dim=-1).long(), num_classes=num_classes)
     log_p = torch.sum(
-        x_one_hot * torch.log(torch.clamp(theta, 10e-4, 1.-10e-4)), dim=-1)
+        x_one_hot * torch.log(theta), dim=-1)
     return log_p
 
 
@@ -39,9 +39,12 @@ class encoder(nn.Module):
         self.fully_connected = nn.Linear(
             32 * self.input_dim * self.input_dim, 2 * latent_dim)
 
-        nn.init.xavier_normal_(self.conv1.weight)
-        nn.init.xavier_normal_(self.conv2.weight)
-        nn.init.xavier_normal_(self.fully_connected.weight)
+        nn.init.zeros_(self.conv1.weight)
+        nn.init.zeros_(self.conv2.weight)
+        nn.init.zeros_(self.fully_connected.weight)
+        self.conv1.bias.data.fill_(1)
+        self.conv2.bias.data.fill_(1)
+        self.fully_connected.bias.data.fill_(1)
 
     def forward(self, x):
         x = self.conv1(x)
@@ -67,11 +70,6 @@ class decoder(nn.Module):
         self.fully_connected = nn.Linear(
             channels * self.input_dim * self.input_dim, channels * self.input_dim * self.input_dim * 256)
         self.softmax = nn.Softmax(dim=1)
-
-        nn.init.xavier_normal_(self.input.weight)
-        nn.init.xavier_normal_(self.conv1.weight)
-        nn.init.xavier_normal_(self.conv2.weight)
-        nn.init.xavier_normal_(self.fully_connected.weight)
 
     def forward(self, x):
         x = self.input(x)
@@ -117,19 +115,21 @@ class VAE(nn.Module):
         theta = self.decode(z)
         log_posterior = log_Normal(z, mu, log_var)
         log_prior = log_standard_Normal(z)
-        log_con_like = log_Categorical(x, theta, self.pixel_range)
-        reconstruction_error = (torch.sum(log_con_like, dim=-1)).mean()
-        regularizer = (- torch.sum(log_posterior - log_prior, dim=-1)).mean()
-        elbo = - (reconstruction_error + regularizer)
-        # print(elbo, reconstruction_error, regularizer)
+        log_like = log_Categorical(x, theta, self.pixel_range)
+        reconstruction_error = - (torch.sum(log_like, dim=-1)).mean()
+        regularizer = - (torch.sum(log_posterior + log_prior, dim=-1)).mean()
+        elbo = (reconstruction_error + regularizer)
+        tqdm.write(
+            f"ELBO: {elbo.detach()}, Reconstruction error: {reconstruction_error.detach()}, Regularizer: {regularizer.detach()}")
         return elbo, reconstruction_error, regularizer
 
-    def train_VAE(self, X, epochs, batch_size, lr=10e-10):
+    def train_VAE(self, X, epochs, batch_size, lr=10e-8):
         parameters = [param for param in self.parameters()
                       if param.requires_grad == True]
         optimizer = torch.optim.Adam(parameters, lr=lr)
         reconstruction_errors = []
         regularizers = []
+        self.train()
         for epoch in tqdm(range(epochs)):
             for i in tqdm(range(0, self.data_length, batch_size)):
                 x = X[i:i+batch_size].to(device)
@@ -140,11 +140,10 @@ class VAE(nn.Module):
                 regularizers.append(regularizer.detach().cpu().numpy())
                 elbo.backward(retain_graph=True)
                 optimizer.step()
-            if epochs == epoch + 1:
-                mu, log_var = self.encode(x)
-                latent_space = self.reparameterization(mu, log_var)
             tqdm.write(
-                f"Epoch: {epoch+1}, ELBO: {elbo}, Reconstruction Error: {reconstruction_error}, Regularizer: {regularizer}")
+                f"Epoch: {epoch+1}, ELBO: {elbo.detach()}, Reconstruction Error: {reconstruction_error.detach()}, Regularizer: {regularizer.detach()}")
+        mu, log_var = self.encode(x)
+        latent_space = self.reparameterization(mu, log_var)
         return self.encoder, self.decoder, reconstruction_errors, regularizers, latent_space
 
 
