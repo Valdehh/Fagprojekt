@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
+from torchsummary import summary
 from tqdm import tqdm
 
 
@@ -113,7 +114,7 @@ class VAE(nn.Module):
     def decode(self, z):
         return self.decoder.forward(z)
 
-    def ELBO(self, x):
+    def forward(self, x):
         mu, log_var = self.encode(x)
         z = self.reparameterization(mu, log_var)
 
@@ -133,7 +134,7 @@ class VAE(nn.Module):
 
         return elbo, reconstruction_error, regularizer
 
-    def train_VAE(self, X, epochs, batch_size, lr=10e-5):
+    def train_VAE(self, dataloader, epochs, batch_size, lr=10e-5):
         parameters = [param for param in self.parameters()
                       if param.requires_grad == True]
         optimizer = torch.optim.Adam(parameters, lr=lr)
@@ -143,10 +144,10 @@ class VAE(nn.Module):
 
         self.train()
         for epoch in tqdm(range(epochs)):
-            for i in tqdm(range(0, self.data_length, batch_size)):
-                x = X[i:i+batch_size].to(device)
+            for batch in tqdm(range(dataloader)):
+                x = batch.to(device)
                 optimizer.zero_grad()
-                elbo, reconstruction_error, regularizer = self.ELBO(x)
+                elbo, reconstruction_error, regularizer = self.forward(x)
                 reconstruction_errors.append(
                     reconstruction_error.detach().numpy())
                 regularizers.append(regularizer.detach().numpy())
@@ -192,17 +193,20 @@ trainset = datasets.MNIST(
     root='./MNIST', train=True, download=True, transform=None)
 testset = datasets.MNIST(
     root='./MNIST', train=False, download=True, transform=None)
-X_train = trainset.data[:train_size].reshape(
-    (train_size, channels, input_dim, input_dim)).float()
-X_test = testset.data[:test_size].reshape(
-    (test_size, channels, input_dim, input_dim)).float()
-
+X_train = DataLoader(trainset.data[:train_size].reshape(
+    (train_size, channels, input_dim, input_dim)).float(), batch_size=batch_size, shuffle=True)
+X_test = DataLoader(testset.data[:test_size].reshape(
+    (test_size, channels, input_dim, input_dim)).float(), batch_size=batch_size, shuffle=True)
 
 # X = np.load("image_matrix.npz")["images"][:1000]
 # X = torch.tensor(X, dtype=torch.float32).permute(0, 3, 1, 2)
 
 VAE = VAE(X_train, pixel_range=pixel_range,
           latent_dim=latent_dim, input_dim=input_dim, channels=channels).to(device)
+
+print("VAE:")
+summary(VAE, input_size=(channels, input_dim, input_dim))
+
 encoder_VAE, decoder_VAE, reconstruction_errors, regularizers, latent_space = VAE.train_VAE(
     X=X_train, epochs=epochs, batch_size=batch_size)
 
