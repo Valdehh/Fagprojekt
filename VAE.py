@@ -144,7 +144,7 @@ class VAE(nn.Module):
 
         self.train()
         for epoch in tqdm(range(epochs)):
-            for batch in tqdm(range(dataloader)):
+            for batch in tqdm(dataloader):
                 x = batch.to(device)
                 optimizer.zero_grad()
                 elbo, reconstruction_error, regularizer = self.forward(x)
@@ -208,7 +208,7 @@ print("VAE:")
 summary(VAE, input_size=(channels, input_dim, input_dim))
 
 encoder_VAE, decoder_VAE, reconstruction_errors, regularizers, latent_space = VAE.train_VAE(
-    X=X_train, epochs=epochs, batch_size=batch_size)
+    dataloader=X_train, epochs=epochs, batch_size=batch_size)
 
 torch.save(encoder_VAE, "encoder_VAE.pt")
 torch.save(decoder_VAE, "decoder_VAE.pt")
