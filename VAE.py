@@ -44,14 +44,6 @@ class encoder(nn.Module):
         self.fully_connected = nn.Linear(
             32 * self.input_dim * self.input_dim, 2 * latent_dim
         )
-        """
-        nn.init.zeros_(self.conv1.weight)
-        nn.init.zeros_(self.conv2.weight)
-        nn.init.zeros_(self.fully_connected.weight)
-        self.conv1.bias.data.fill_(1)
-        self.conv2.bias.data.fill_(1)
-        self.fully_connected.bias.data.fill_(1)
-        """
 
     def forward(self, x):
         x = self.conv1(x)
@@ -253,13 +245,8 @@ VAE = VAE(
 print("VAE:")
 summary(VAE, input_size=(channels, input_dim, input_dim))
 
-(
-    encoder_VAE,
-    decoder_VAE,
-    reconstruction_errors,
-    regularizers,
-    latent_space,
-) = VAE.train_VAE(dataloader=X_train, epochs=epochs)
+encoder_VAE, decoder_VAE, reconstruction_errors, regularizers, latent_space = VAE.train_VAE(
+    X=X_train, epochs=epochs, batch_size=batch_size)
 
 torch.save(encoder_VAE, "encoder_VAE.pt")
 torch.save(decoder_VAE, "decoder_VAE.pt")
