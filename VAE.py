@@ -62,7 +62,8 @@ class decoder(nn.Module):
         self.channels = channels
         self.pixel_range = pixel_range
 
-        self.input = nn.Linear(latent_dim, 32 * self.input_dim * self.input_dim)
+        self.input = nn.Linear(
+            latent_dim, 32 * self.input_dim * self.input_dim)
         self.conv1 = nn.ConvTranspose2d(
             32, 16, kernel_size=5, stride=1, padding=5 - (self.input_dim % 5)
         )
@@ -104,7 +105,8 @@ class VAE(nn.Module):
         # self.prior = torch.distributions.MultivariateNormal(loc=torch.zeros(latent_dim), covariance_matrix=torch.eye(latent_dim))
 
     def encode(self, x):
-        mu, log_var = torch.split(self.encoder.forward(x), self.latent_dim, dim=1)
+        mu, log_var = torch.split(
+            self.encoder.forward(x), self.latent_dim, dim=1)
         return mu, log_var
 
     def reparameterization(self, mu, log_var):
@@ -127,10 +129,10 @@ class VAE(nn.Module):
         regularizer = -torch.sum(log_prior - log_posterior, dim=-1).mean()
 
         elbo = reconstruction_error + regularizer
-        
+
         tqdm.write(
             f"ELBO: {elbo.detach()}, Reconstruction error: {reconstruction_error.detach()}, Regularizer: {regularizer.detach()}")
-        
+
         return elbo, reconstruction_error, regularizer
 
     def initialise(self):
@@ -162,9 +164,10 @@ class VAE(nn.Module):
                 x = batch.to(device)
                 optimizer.zero_grad()
                 elbo, reconstruction_error, regularizer = self.forward(x)
-                reconstruction_errors.append(reconstruction_error.detach().numpy())
+                reconstruction_errors.append(
+                    reconstruction_error.detach().numpy())
                 regularizers.append(regularizer.detach().numpy())
-                elbo.backward(retain_graph=True)
+                elbo.backward()
                 optimizer.step()
 
             tqdm.write(
@@ -213,8 +216,10 @@ torch.backends.cudnn.deterministic = True
 torch.manual_seed(42)
 torch.cuda.manual_seed(42)
 
-trainset = datasets.MNIST(root="./MNIST", train=True, download=True, transform=None)
-testset = datasets.MNIST(root="./MNIST", train=False, download=True, transform=None)
+trainset = datasets.MNIST(root="./MNIST", train=True,
+                          download=True, transform=None)
+testset = datasets.MNIST(root="./MNIST", train=False,
+                         download=True, transform=None)
 X_train = DataLoader(
     trainset.data[:train_size]
     .reshape((train_size, channels, input_dim, input_dim))
@@ -260,7 +265,8 @@ plt.plot(
 )
 plt.plot(np.arange(0, len(regularizers), 1), regularizers, label="Regularizer")
 plt.xlabel("Epochs")
-plt.xticks(ticks=np.arange(0, train_size * epochs, 1), labels=np.arange(0, train_size * epochs, 1), minor=True)
+plt.xticks(ticks=np.arange(0, train_size * epochs, 1),
+           labels=np.arange(0, train_size * epochs, 1), minor=True)
 plt.xticks(
     ticks=np.arange(
         0, (epochs + 1) * train_size / batch_size, train_size / batch_size

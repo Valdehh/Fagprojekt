@@ -150,7 +150,7 @@ class VAE(nn.Module):
 
         reconstruction_errors = []
         regularizers = []
-        
+
         self.initialise()
         self.train()
         for epoch in tqdm(range(epochs)):
@@ -161,7 +161,7 @@ class VAE(nn.Module):
                 reconstruction_errors.append(
                     reconstruction_error.detach().numpy())
                 regularizers.append(regularizer.detach().numpy())
-                elbo.backward(retain_graph=True)
+                elbo.backward()
                 optimizer.step()
 
             tqdm.write(
@@ -193,8 +193,8 @@ epochs = 10
 batch_size = 50
 
 pixel_range = 256
-input_dim = 28
-channels = 1
+input_dim = 68
+channels = 3
 
 train_size = 5000
 test_size = 1000
@@ -203,8 +203,10 @@ torch.backends.cudnn.deterministic = True
 torch.manual_seed(42)
 torch.cuda.manual_seed(42)
 
-trainset = datasets.MNIST(root="./MNIST", train=True, download=True, transform=None)
-testset = datasets.MNIST(root="./MNIST", train=False, download=True, transform=None)
+trainset = datasets.MNIST(root="./MNIST", train=True,
+                          download=True, transform=None)
+testset = datasets.MNIST(root="./MNIST", train=False,
+                         download=True, transform=None)
 X_train = DataLoader(
     trainset.data[:train_size]
     .reshape((train_size, channels, input_dim, input_dim))
@@ -219,10 +221,12 @@ X_test = DataLoader(
     batch_size=batch_size,
     shuffle=True,
 )
-
-# X = np.load("image_matrix.npz")["images"][:1000]
-# X = torch.tensor(X, dtype=torch.float32).permute(0, 3, 1, 2)
-
+"""
+X = np.load("image_matrix.npz")["images"][:1000]
+X = torch.tensor(X, dtype=torch.float32).permute(0, 3, 1, 2)
+X_train = DataLoader(X, batch_size=batch_size, shuffle=True)
+X_test = DataLoader(X, batch_size=batch_size, shuffle=True)
+"""
 VAE = VAE(
     pixel_range=pixel_range,
     latent_dim=latent_dim,
@@ -253,7 +257,8 @@ plt.plot(
 )
 plt.plot(np.arange(0, len(regularizers), 1), regularizers, label="Regularizer")
 plt.xlabel("Epochs")
-plt.xticks(ticks=np.arange(0, train_size * epochs, 1), labels=np.arange(0, train_size * epochs, 1), minor=True)
+plt.xticks(ticks=np.arange(0, train_size * epochs, 1),
+           labels=np.arange(0, train_size * epochs, 1), minor=True)
 plt.xticks(
     ticks=np.arange(
         0, (epochs + 1) * train_size / batch_size, train_size / batch_size
