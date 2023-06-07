@@ -5,6 +5,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 import scipy.stats as st
 from sklearn.metrics import confusion_matrix, roc_curve, auc
 import matplotlib.pyplot as plt
+
 from statsmodels.stats.contingency_tables import mcnemar
 
 #load data
@@ -28,6 +29,10 @@ pred_basic = []
 pred_semi = []
 
 real_label = []
+
+# Define feature sensitivities
+feature_sensitivity_basic = []
+feature_sensitivity_semi = []
 
 for Unique_Compound in list_of_compounds:
     #find compound
@@ -57,6 +62,20 @@ for Unique_Compound in list_of_compounds:
     score_basic.append(model_basic.score(pred_basic, y_test)) 
     score_semi.append(model_semi.score(pred_semi, y_test))
     real_label.append(y_test)
+
+    #compute decision function and compute gradients and store
+    X_basic_test_tensor=torch.tensor(X_basic_test, device=device, dtype=torch.float32, requires_grad=True)
+    output_basic = torch.tensor(model_basic.decision_function(X_basic_test), device=device, dtype=torch.float32, requires_grad=True)
+    output_basic.backward(torch.ones_like(output_basic))
+    gradients_basic = X_basic_test_tensor.grad.numpy()
+    feature_sensitivity_basic.append(gradients_basic.mean(axis=0))
+
+    # calculate gradients for semi model
+    X_semi_test_tensor=torch.tensor(X_semi_test, device=device, dtype=torch.float32, requires_grad=True)
+    output_semi = torch.tensor(model_semi.decision_function(X_semi_test), device=device, dtype=torch.float32, requires_grad=True)
+    output_semi.backward(torch.ones_like(output_semi))
+    gradients_semi = X_semi_test_tensor.grad
+    feature_sensitivity_semi.append(gradients_semi.mean(axis=0).numpy())
 
 #define and plot cf-matix and plot
 Confusion_matrix_basic = confusion_matrix(pred_basic, y_test)
