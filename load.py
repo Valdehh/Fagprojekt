@@ -22,7 +22,8 @@ for i in range(len(data)):
         image = np.load(file_path)
         for channel in range(image.shape[2]):
             max_val = np.max(image[:, :, channel])
-            image[:, :, channel] = image[:, :, channel] / max_val
+            image[:, :, channel] = (
+                image[:, :, channel] / max_val).astype(np.float32)
         X.append(image)
         y.append(data[i, -1])
         compound.append(data[i, -3])
