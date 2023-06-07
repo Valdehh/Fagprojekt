@@ -13,7 +13,6 @@ import os
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-
 def log_Normal(x, mu, log_var):
     D = x.shape[1]
     log_p = -0.5 * (
@@ -22,7 +21,6 @@ def log_Normal(x, mu, log_var):
         + D * torch.log(2 * torch.tensor(np.pi))
     )
     return log_p
-
 
 def log_standard_Normal(x):
     D = x.shape[1]
@@ -66,7 +64,7 @@ class decoder(nn.Module):
         x = self.conv2(x)
         x = nn.LeakyReLU(0.01)(x)
         x = x.view(-1, self.channels * self.input_dim * self.input_dim)
-        #x = self.softmax(x) # i dont think this is needed
+        #x = self.softmax(x) # i dont think this is needed.. but maybe?
         return x
 
 
@@ -98,11 +96,13 @@ class VAE(nn.Module):
 
         log_posterior = log_Normal(z, mu, log_var)
         log_prior = log_standard_Normal(z)
-        # log_like = log_Categorical(x, theta, self.pixel_range)
+
+        # initial try
         # log_like = torch.normal(mean = mean, std = 0.001) 
         # log_like = torch.distributions.LogNormal(loc=mean, scale=0.01)
         # recon_x = log_like.sample()
         
+        # this works? like some papers say to do this
         reconstruction_error = F.mse_loss(recon_x, x.view(-1, self.channels * self.input_dim * self.input_dim)/255, reduction="none").sum(-1)
         reconstruction_error = reconstruction_error.to(device)
 
