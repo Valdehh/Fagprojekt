@@ -1,4 +1,3 @@
-
 # Importing the libraries
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
@@ -14,8 +13,10 @@ import os
 # https://pytorch.org/tutorials/beginner/data_loading_tutorial.html
 
 class BBBC(Dataset):
-    def __init__(self, folder_path, meta_path, subset=(390716, 97679), # 1/5 of the data is test data by default
-                                                          test=False, normalize='to_1'):
+    def __init__(self, folder_path, meta_path, 
+                 subset=(390716, 97679), # 1/5 of the data is test data by default
+                test=False, normalize='to_1',
+                exclude_dmso=False):
         try:
             self.meta = pd.read_csv(meta_path, index_col=0)
         except:
@@ -25,6 +26,8 @@ class BBBC(Dataset):
         self.train_size, self.test_size = subset
         self.test = test  
         self.normalize = normalize  
+
+        if exclude_dmso: self.exclude_dmso()
         self.meta = self.meta.iloc[self.train_size:self.train_size + self.test_size, :] if self.test else self.meta.iloc[:self.train_size,:]
         
     def __len__(self,):
@@ -39,12 +42,16 @@ class BBBC(Dataset):
         # helper function to normalize to [0...1]
         to_1 = (x/np.max(x))
         return to_1.astype(np.float32).reshape((3,68,68))   
+    
+    def exclude_dmso(self):
+        # helper function to exclude DMSO from the dataset
+        self.meta = self.meta[self.meta[self.col_names[-1]] != 'DMSO']
 
     def __getitem__(self, idx):
-        if self.test: idx += self.train_size
+        #if self.test: idx += self.train_size
         img_name = os.path.join(self.folder_path,
-                                self.meta[self.col_names[1]][idx], 
-                                self.meta[self.col_names[3]][idx])
+                                self.meta[self.col_names[1]].iloc[idx], 
+                                self.meta[self.col_names[3]].iloc[idx])
         image = np.load(img_name)
 
         # convert the data to appropriate format
@@ -53,8 +60,8 @@ class BBBC(Dataset):
         else:
             image = self.normalize_to_255(image)
 
-        moa = self.meta[self.col_names[-1]][idx]
-        compound = self.meta[self.col_names[-3]][idx]
+        moa = self.meta[self.col_names[-1]].iloc[idx]
+        compound = self.meta[self.col_names[-3]].iloc[idx]
 
         sample = {"idx": idx, 
                   "image": torch.tensor(image), 
@@ -71,6 +78,8 @@ if __name__ == "__main__":
     train_size = 25
     test_size = 25
 
+    exclude_dmso = True
+
     # path to singlecells
 
     main_path = "/Users/nikolaj/Fagprojekt/Data/"
@@ -83,12 +92,14 @@ if __name__ == "__main__":
     dataset_train = BBBC(folder_path=main_path + "singh_cp_pipeline_singlecell_images",
                             meta_path=main_path + "metadata.csv",
                             subset=subset,
-                            test=False)
+                            test=False,
+                            exclude_dmso=exclude_dmso)
 
     dataset_test = BBBC(folder_path=main_path + "singh_cp_pipeline_singlecell_images",
                             meta_path=main_path + "metadata.csv",
                             subset=subset,
-                            test=True)
+                            test=True,
+                            exclude_dmso=exclude_dmso)
 
     X_train = DataLoader(dataset_train, batch_size=batch_size)#, shuffle=True, num_workers=0)
 
