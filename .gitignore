@@ -1,9 +1,11 @@
 Data/
 MNIST/
 encoder_decoder_structure.py
+*.png
+!temp\ vae/results_bbbc/*
+!temp\ vae/results_NMIST/*
 *.npz
 *.npy
-*.png
 *.pt
 nikos_filer/
 __pycache__/
