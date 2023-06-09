@@ -12,17 +12,16 @@ from torchsummary import summary
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
-def log_Categorical(x, theta, num_classes):
-    x_one_hot = nn.functional.one_hot(
-        x.flatten(start_dim=1, end_dim=-1).long(), num_classes=num_classes)
-    log_p = torch.sum(
-        x_one_hot * torch.log(theta), dim=-1)
+def log_Categorical(x, x_prob, num_classes):
+    x_one_hot = nn.functional.one_hot(x, num_classes=num_classes)
+    log_p = torch.sum(x_one_hot * torch.log(x_prob), dim=-1)
     return log_p
 
 
-def log_standard_Categorical(x):
-    x_one_hot = nn.functional.softmax(torch.ones_like(x), dim=1)
-    log_p = -torch.sum(x * torch.log(x_one_hot + 1e-8), dim=1)
+def log_standard_Categorical(x, num_classes):
+    x_one_hot = nn.functional.one_hot(x, num_classes=num_classes).float()
+    x_prob = nn.functional.softmax(torch.ones_like(x_one_hot), dim=1)
+    log_p = torch.sum(x_one_hot * torch.log(x_prob + 1e-7), dim=1)
     return log_p
 
 
@@ -59,11 +58,10 @@ class encoder(nn.Module):
 
 
 class decoder(nn.Module):
-    def __init__(self, input_dim, middel_dim, channels, pixel_range):
+    def __init__(self, input_dim, middel_dim, channels):
         super(decoder, self).__init__()
         self.input_dim = input_dim
         self.channels = channels
-        self.pixel_range = pixel_range
 
         self.input = nn.Linear(
             middel_dim, 32 * self.input_dim * self.input_dim)
@@ -72,7 +70,7 @@ class decoder(nn.Module):
         self.conv2 = nn.ConvTranspose2d(
             16, channels, kernel_size=5, stride=1, padding=5 - (self.input_dim % 5))
         self.fully_connected = nn.Linear(
-            channels * self.input_dim * self.input_dim, channels * self.input_dim * self.input_dim * self.pixel_range)
+            channels * self.input_dim * self.input_dim, 2 * channels * self.input_dim * self.input_dim)
         self.softmax = nn.Softmax(dim=2)
 
     def forward(self, x):
@@ -85,9 +83,6 @@ class decoder(nn.Module):
         x = nn.functional.relu(x)
         x = x.view(-1, self.channels * self.input_dim * self.input_dim)
         x = self.fully_connected(x)
-        x = x.view(-1, self.channels * self.input_dim *
-                   self.input_dim, self.pixel_range)
-        x = self.softmax(x)
         return x
 
 
@@ -116,20 +111,20 @@ class classifier(nn.Module):
 
 
 class Semi_supervised_VAE(nn.Module):
-    def __init__(self, classes, pixel_range, latent_dim, input_dim, channels):
+    def __init__(self, classes, latent_dim, input_dim, channels):
         super(Semi_supervised_VAE, self).__init__()
 
-        self.pixel_range = pixel_range
         self.latent_dim = latent_dim
         self.classes = classes
+        self.channels = channels
+        self.input_dim = input_dim
         self.alpha = 0.1
         self.middel_dim = 32 * input_dim * input_dim
 
         self.eps = torch.normal(mean=0, std=torch.ones(latent_dim)).to(device)
 
         self.encoder = encoder(input_dim, self.middel_dim, channels)
-        self.decoder = decoder(
-            input_dim, self.middel_dim, channels, pixel_range)
+        self.decoder = decoder(input_dim, self.middel_dim, channels)
         self.classifier = classifier(classes, input_dim, channels)
 
         self.middel_1 = nn.Linear(self.middel_dim + classes, latent_dim)
@@ -147,92 +142,85 @@ class Semi_supervised_VAE(nn.Module):
 
     def decode(self, z, y_hat):
         z = self.middel_3(torch.cat((z, y_hat), dim=1))
-        return self.decoder.forward(z)
+        mu, log_var = torch.split(
+            self.decoder.forward(z), self.channels * self.input_dim * self.input_dim, dim=1)
+        std = torch.exp(0.5 * log_var)
+        return mu, std
 
     def classify(self, x):
         return self.classifier.forward(x)
 
-    def ELBO_unlabelled(self, y_prob, log_prior, log_posterior, log_like):
+    def ELBO_unlabelled(self, y_prob, reconstruction_error, KL):
         H = - torch.sum(torch.log(y_prob) * y_prob, dim=-1).mean()
-        K_1 = - np.log(1 / self.classes)
-
-        reconstruction_error = - torch.sum(log_like, dim=-1)
-        KL = - torch.sum(log_prior - log_posterior, dim=-1)
+        K_1 = - log_standard_Categorical(torch.tensor([0]), self.classes)
 
         Lxy = reconstruction_error + KL + K_1
         q_Lxy = torch.sum(y_prob * Lxy.view(-1, 1), dim=-1).mean()
 
         ELBO = q_Lxy + H
 
-        reconstruction_error = reconstruction_error.mean()
-        KL = KL.mean()
+        return ELBO
 
-        return ELBO, reconstruction_error, KL
+    def ELBO_labelled(self, y, y_prob, reconstruction_error, KL):
+        K_1 = - log_standard_Categorical(y, self.classes)
+        log_like_y = - log_Categorical(y, y_prob, self.classes)
 
-    def ELBO_labelled(self, y, y_prob, log_prior, log_posterior, log_like):
-        K_1 = - np.log(1 / self.classes)
-        # K_1 = -log_standard_Categorical(y).mean
-        log_y = - torch.sum(y * torch.log(y_prob), dim=-1).mean()
+        Lxy = (reconstruction_error + KL + K_1).mean()
 
-        reconstruction_error = - torch.sum(log_like, dim=-1).mean()
-        KL = - torch.sum(log_prior - log_posterior, dim=-1).mean()
+        ELBO = Lxy + self.alpha * log_like_y.mean()
 
-        Lxy = reconstruction_error + KL + K_1
-
-        ELBO = Lxy + self.alpha * log_y
-
-        return ELBO, reconstruction_error, KL
+        return ELBO
 
     def forward(self, x, y):
-        y_onehot = nn.functional.one_hot(
-            y.long(), num_classes=self.classes).float()
+        # y_onehot = nn.functional.one_hot(y, num_classes=self.classes).float()
 
         idx = y != 0  # "DMSO"
 
-        y_labelled = y_onehot[idx]
+        # y_labelled = y_onehot[idx]
+        y_labelled = y[idx]
 
         y_hat = self.classify(x)
         mu, log_var = self.encode(x, y_hat)
 
         z = self.reparameterization(mu, log_var)
 
-        theta = self.decode(z, y_hat)
+        decode_mu, decode_std = self.decode(z, y_hat)
 
         log_posterior = log_Normal(z, mu, log_var)
         log_prior = log_standard_Normal(z)
-        log_like = log_Categorical(x, theta, self.pixel_range)
+        log_like = (1 / (2 * decode_std ** 2) * nn.functional.mse_loss(decode_mu, x.flatten(
+            start_dim=1, end_dim=-1), reduction="none"))
+
+        reconstruction_error = torch.sum(log_like, dim=-1)
+        KL = - torch.sum(log_prior - log_posterior, dim=-1)
 
         y_prob_unlabelled = y_hat[~idx]
         y_prob_labelled = y_hat[idx]
 
-        log_posterior_unlabelled = log_posterior[~idx]
-        log_posterior_labelled = log_posterior[idx]
+        reconstruction_error_unlabelled = reconstruction_error[~idx]
+        reconstruction_error_labelled = reconstruction_error[idx]
 
-        log_prior_unlabelled = log_prior[~idx]
-        log_prior_labelled = log_prior[idx]
-
-        log_like_unlabelled = log_like[~idx]
-        log_like_labelled = log_like[idx]
+        KL_unlabelled = KL[~idx]
+        KL_labelled = KL[idx]
 
         if y_prob_unlabelled.shape[0] == 0:
-            ELBO_labelled, reconstruction_error_labelled, KL_labelled = self.ELBO_labelled(
-                y_labelled, y_prob_labelled, log_prior_labelled, log_posterior_labelled, log_like_labelled)
+            ELBO_labelled = self.ELBO_labelled(
+                y_labelled, y_prob_labelled, reconstruction_error_labelled, KL_labelled)
             ELBO_unlabelled, reconstruction_error_unlabelled, KL_unlabelled = 0, 0, 0
 
         elif y_prob_labelled.shape[0] == 0:
-            ELBO_unlabelled, reconstruction_error_unlabelled, KL_unlabelled = self.ELBO_unlabelled(
-                y_prob_unlabelled, log_prior_unlabelled, log_posterior_unlabelled, log_like_unlabelled)
+            ELBO_unlabelled = self.ELBO_unlabelled(
+                y_prob_unlabelled, reconstruction_error_unlabelled, KL_unlabelled)
             ELBO_labelled, reconstruction_error_labelled, KL_labelled = 0, 0, 0
 
         else:
-            ELBO_unlabelled, reconstruction_error_unlabelled, KL_unlabelled = self.ELBO_unlabelled(
-                y_prob_unlabelled, log_prior_unlabelled, log_posterior_unlabelled, log_like_unlabelled)
-            ELBO_labelled, reconstruction_error_labelled, KL_labelled = self.ELBO_labelled(
-                y_labelled, y_prob_labelled, log_prior_labelled, log_posterior_labelled, log_like_labelled)
+            ELBO_unlabelled = self.ELBO_unlabelled(
+                y_prob_unlabelled, reconstruction_error_unlabelled, KL_unlabelled)
+            ELBO_labelled = self.ELBO_labelled(
+                y_labelled, y_prob_labelled, reconstruction_error_labelled, KL_labelled)
 
-        reconstruction_error = reconstruction_error_labelled + \
-            reconstruction_error_unlabelled
-        KL = KL_labelled + KL_unlabelled
+        reconstruction_error = reconstruction_error.mean()
+        KL = KL.mean()
 
         ELBO = ELBO_unlabelled + ELBO_labelled
 
@@ -318,10 +306,10 @@ Xy_test = DataLoader(Xy_test, batch_size=batch_size, shuffle=True)
 # X = np.load("image_matrix.npz")["images"][:1000]
 # X = torch.tensor(X, dtype=torch.float32).permute(0, 3, 1, 2)
 
-VAE = Semi_supervised_VAE(classes=classes, pixel_range=pixel_range,
-                          latent_dim=latent_dim, input_dim=input_dim, channels=channels).to(device)
+VAE = Semi_supervised_VAE(classes=classes, latent_dim=latent_dim,
+                          input_dim=input_dim, channels=channels).to(device)
 
-print("VAE:")
+# print("VAE:")
 # The summary function from torchsummary.py has been modified to work with the code by changing the following lines (ln 101):
 # total_input_size = abs(np.prod([np.prod(in_size) for in_size in input_size]) * batch_size * 4. / (1024 ** 2.))
 # summary(VAE, input_size=[(batch_size, channels, input_dim, input_dim), (batch_size,)])
