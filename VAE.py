@@ -19,13 +19,22 @@ def log_Categorical(x, theta, num_classes):
     return log_p
 
 
+def log_Mean_Squared_Error(x, theta):
+    x = x.flatten(start_dim=1, end_dim=-1)
+    log_p = torch.log(((x - theta) ** 2) / x.shape[1])
+    return log_p
+
+
+def negative_log_Likelihood(x, theta, std):
+    x = x.flatten(start_dim=1, end_dim=-1)
+    log_p = ((x - theta) ** 2) / (2 * std ** 2)
+    return log_p
+
+
 def log_Normal(x, mu, log_var):
     D = x.shape[1]
-    log_p = -0.5 * (
-        (x - mu) ** 2.0 * torch.exp(-log_var)
-        + log_var
-        + D * torch.log(2 * torch.tensor(np.pi))
-    )
+    log_p = -0.5 * ((x - mu) ** 2.0 * torch.exp(-log_var) +
+                    log_var + D * torch.log(2 * torch.tensor(np.pi)))
     return log_p
 
 
@@ -39,57 +48,46 @@ class encoder(nn.Module):
     def __init__(self, input_dim, latent_dim, channels):
         super(encoder, self).__init__()
         self.input_dim = input_dim
+
         self.conv1 = nn.Conv2d(channels, 16, kernel_size=5, padding="same")
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=5, padding="same")
         self.fully_connected = nn.Linear(
-            32 * self.input_dim * self.input_dim, 2 * latent_dim
-        )
+            16 * self.input_dim * self.input_dim, 2 * latent_dim)
 
     def forward(self, x):
         x = self.conv1(x)
-        x = nn.functional.relu(x)
-        x = self.conv2(x)
-        x = nn.functional.relu(x)
-        x = x.view(-1, 32 * self.input_dim * self.input_dim)
+        x = nn.LeakyReLU(0.01)(x)
+        x = x.view(-1, 16 * self.input_dim * self.input_dim)
         x = self.fully_connected(x)
+        x = nn.LeakyReLU(0.01)(x)
         return x
 
 
 class decoder(nn.Module):
-    def __init__(self, input_dim, latent_dim, channels, pixel_range):
+    def __init__(self, input_dim, latent_dim, channels):
         super(decoder, self).__init__()
         self.input_dim = input_dim
         self.channels = channels
-        self.pixel_range = pixel_range
 
         self.input = nn.Linear(
-            latent_dim, 32 * self.input_dim * self.input_dim)
-        self.conv1 = nn.ConvTranspose2d(
-            32, 16, kernel_size=5, stride=1, padding=5 - (self.input_dim % 5)
-        )
+            latent_dim, 16 * self.input_dim * self.input_dim)
         self.conv2 = nn.ConvTranspose2d(
-            16, channels, kernel_size=5, stride=1, padding=5 - (self.input_dim % 5)
-        )
-        self.fully_connected = nn.Linear(
-            channels * self.input_dim * self.input_dim,
-            channels * self.input_dim * self.input_dim * pixel_range,
-        )
-        self.softmax = nn.Softmax(dim=2)  # changed dim from 1 to 2
+            16, channels, kernel_size=5, stride=1, padding=5 - (self.input_dim % 5))
+        self.output = nn.Linear(channels * self.input_dim * self.input_dim,
+                                2 * channels * self.input_dim * self.input_dim)
+
+        # self.softmax = nn.Softmax(dim=1)
+        # self.softmax = nn.Sigmoid()
 
     def forward(self, x):
         x = self.input(x)
-        x = nn.functional.relu(x)
-        x = x.view(-1, 32, self.input_dim, self.input_dim)
-        x = self.conv1(x)
-        x = nn.functional.relu(x)
+        x = nn.LeakyReLU(0.01)(x)
+        x = x.view(-1, 16, self.input_dim, self.input_dim)
         x = self.conv2(x)
-        x = nn.functional.relu(x)
+        x = nn.LeakyReLU(0.01)(x)
         x = x.view(-1, self.channels * self.input_dim * self.input_dim)
-        x = self.fully_connected(x)
-        x = x.view(
-            -1, self.channels * self.input_dim * self.input_dim, self.pixel_range
-        )
-        x = self.softmax(x)
+        x = self.output(x)
+        x = nn.LeakyReLU(0.01)(x)
+        # x = self.softmax(x) # i dont think this is needed.. but maybe?
         return x
 
 
@@ -97,9 +95,11 @@ class VAE(nn.Module):
     def __init__(self, pixel_range, latent_dim, input_dim, channels):
         super(VAE, self).__init__()
         self.encoder = encoder(input_dim, latent_dim, channels)
-        self.decoder = decoder(input_dim, latent_dim, channels, pixel_range)
+        self.decoder = decoder(input_dim, latent_dim, channels)
         self.pixel_range = pixel_range
         self.latent_dim = latent_dim
+        self.channels = channels
+        self.input_dim = input_dim
 
         self.eps = torch.normal(mean=0, std=torch.ones(latent_dim)).to(device)
         # self.prior = torch.distributions.MultivariateNormal(loc=torch.zeros(latent_dim), covariance_matrix=torch.eye(latent_dim))
@@ -113,32 +113,39 @@ class VAE(nn.Module):
         return mu + torch.exp(0.5 * log_var) * self.eps
 
     def decode(self, z):
-        return self.decoder.forward(z)
+        mu, log_var = torch.split(
+            self.decoder.forward(z), self.channels * self.input_dim * self.input_dim, dim=1)
+        std = torch.exp(0.5 * log_var)
+        return mu, std
 
     def forward(self, x):
         mu, log_var = self.encode(x)
         z = self.reparameterization(mu, log_var)
 
-        theta = self.decode(z)
+        decode_mu, decode_std = self.decode(z)
+        # decode_std = 0.1 * torch.ones(decode_mu.shape).to(device)
+        theta = torch.normal(mean=decode_mu, std=decode_std)
 
         log_posterior = log_Normal(z, mu, log_var)
         log_prior = log_standard_Normal(z)
-        log_like = log_Categorical(x, theta, self.pixel_range)
+        log_like = nn.functional.mse_loss(theta, x.flatten(
+            start_dim=1, end_dim=-1), reduction="none").sum(-1)
+        # log_like = log_Categorical(x, theta, self.pixel_range)
 
-        reconstruction_error = -torch.sum(log_like, dim=-1).mean()
-        regularizer = -torch.sum(log_prior - log_posterior, dim=-1).mean()
+        reconstruction_error = torch.sum(log_like, dim=-1).mean()
+        regularizer = - torch.sum(log_prior - log_posterior, dim=-1).mean()
 
         elbo = reconstruction_error + regularizer
 
         tqdm.write(
-            f"ELBO: {elbo.detach()}, Reconstruction error: {reconstruction_error.detach()}, Regularizer: {regularizer.detach()}")
+            f"ELBO: {elbo.item()}, Reconstruction error: {reconstruction_error.item()}, Regularizer: {regularizer.item()}")
 
         return elbo, reconstruction_error, regularizer
 
     def initialise(self):
         def _init_weights(m):
             if isinstance(m, nn.Linear):
-                nn.init.sparse_(m.weight, sparsity=1)
+                nn.init.sparse_(m.weight, sparsity=0.1)
                 if m.bias is not None:
                     m.bias.data.fill_(3)
             elif isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
@@ -165,13 +172,13 @@ class VAE(nn.Module):
                 optimizer.zero_grad()
                 elbo, reconstruction_error, regularizer = self.forward(x)
                 reconstruction_errors.append(
-                    reconstruction_error.detach().numpy())
-                regularizers.append(regularizer.detach().numpy())
+                    reconstruction_error.item())
+                regularizers.append(regularizer.item())
                 elbo.backward()
                 optimizer.step()
 
             tqdm.write(
-                f"Epoch: {epoch+1}, ELBO: {elbo.detach()}, Reconstruction Error: {reconstruction_error.detach()}, Regularizer: {regularizer.detach()}"
+                f"Epoch: {epoch+1}, ELBO: {elbo.item()}, Reconstruction Error: {reconstruction_error.item()}, Regularizer: {regularizer.item()}"
             )
 
         mu, log_var = self.encode(x)
@@ -201,13 +208,13 @@ def generate_image(X, encoder, decoder, latent_dim, channels, input_dim, batch_s
     return image
 
 
-latent_dim = 50
+latent_dim = 128
 epochs = 5
 batch_size = 10
 
 pixel_range = 256
-input_dim = 28
-channels = 1
+input_dim = 68
+channels = 3
 
 train_size = 1000
 test_size = 1000
@@ -215,7 +222,7 @@ test_size = 1000
 torch.backends.cudnn.deterministic = True
 torch.manual_seed(42)
 torch.cuda.manual_seed(42)
-
+"""
 trainset = datasets.MNIST(root="./MNIST", train=True,
                           download=True, transform=None)
 testset = datasets.MNIST(root="./MNIST", train=False,
@@ -239,7 +246,7 @@ X = np.load("image_matrix.npz")["images"][:1000]
 X = torch.tensor(X, dtype=torch.float32).permute(0, 3, 1, 2)
 X_train = DataLoader(X, batch_size=batch_size, shuffle=True)
 X_test = DataLoader(X, batch_size=batch_size, shuffle=True)
-"""
+
 VAE = VAE(
     pixel_range=pixel_range,
     latent_dim=latent_dim,
@@ -247,11 +254,11 @@ VAE = VAE(
     channels=channels,
 ).to(device)
 
-print("VAE:")
-summary(VAE, input_size=(channels, input_dim, input_dim))
+# print("VAE:")
+# summary(VAE, input_size=(channels, input_dim, input_dim))
 
 encoder_VAE, decoder_VAE, reconstruction_errors, regularizers, latent_space = VAE.train_VAE(
-    X=X_train, epochs=epochs, batch_size=batch_size)
+    dataloader=X_train, epochs=epochs)
 
 torch.save(encoder_VAE, "encoder_VAE.pt")
 torch.save(decoder_VAE, "decoder_VAE.pt")
