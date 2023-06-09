@@ -124,13 +124,13 @@ class VAE(nn.Module):
         print(z.shape)
 
         decode_mu, decode_std = self.decode(z)
-        
+
         # decode_std = 0.1 * torch.ones(decode_mu.shape).to(device)
         print(decode_std)
         log_posterior = log_Normal(z, mu, log_var)
         log_prior = log_standard_Normal(z)
         log_like = (1 / (2 * decode_std ** 2) * nn.functional.mse_loss(decode_mu, x.flatten(
-            start_dim=1, end_dim=-1), reduction="none")).sum(-1)
+            start_dim=1, end_dim=-1), reduction="none"))
         # log_like = log_Categorical(x, theta, self.pixel_range)
 
         reconstruction_error = torch.sum(log_like, dim=-1).mean()
@@ -140,7 +140,7 @@ class VAE(nn.Module):
 
         tqdm.write(
             f"ELBO: {elbo.item()}, Reconstruction error: {reconstruction_error.item()}, Regularizer: {regularizer.item()}")
-        
+
         if save_latent:
             return elbo, reconstruction_error, regularizer
 
@@ -184,7 +184,6 @@ class VAE(nn.Module):
             tqdm.write(
                 f"Epoch: {epoch+1}, ELBO: {elbo.item()}, Reconstruction Error: {reconstruction_error.item()}, Regularizer: {regularizer.item()}"
             )
-        
 
         return (
             self.encoder,
@@ -192,9 +191,9 @@ class VAE(nn.Module):
             reconstruction_errors,
             regularizers,
         )
-    
+
     def test_VAE(self, dataloader, save_latent=False):
-        
+
         reconstruction_errors = []
         regularizers = []
         elbos = []
@@ -211,16 +210,16 @@ class VAE(nn.Module):
             if save_latent:
                 elbo, reconstruction_error, regularizer, z = self.forward(x)
                 z = z.detach().numpy()
-                latent = np.vstack((latent,z))
+                latent = np.vstack((latent, z))
 
             else:
                 elbo, reconstruction_error, regularizer = self.forward(x)
 
             reconstruction_errors.append(
-                    reconstruction_error.item())
+                reconstruction_error.item())
             regularizers.append(regularizer.item())
             elbos.append(elbo.items())
-        
+
         latent = np.delete(latent, 0, 0)
         np.savez("latent_space.npz", z=latent, labels=moa, compound=compound)
         return reconstruction_error, reconstruction_error, elbo
