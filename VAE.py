@@ -124,11 +124,10 @@ class VAE(nn.Module):
 
         decode_mu, decode_std = self.decode(z)
         # decode_std = 0.1 * torch.ones(decode_mu.shape).to(device)
-        theta = torch.normal(mean=decode_mu, std=decode_std)
 
         log_posterior = log_Normal(z, mu, log_var)
         log_prior = log_standard_Normal(z)
-        log_like = nn.functional.mse_loss(theta, x.flatten(
+        log_like = 1 / (2 * decode_std ** 2) * nn.functional.mse_loss(decode_mu, x.flatten(
             start_dim=1, end_dim=-1), reduction="none").sum(-1)
         # log_like = log_Categorical(x, theta, self.pixel_range)
 
@@ -164,7 +163,7 @@ class VAE(nn.Module):
         reconstruction_errors = []
         regularizers = []
 
-        self.initialise()
+        # self.initialise()
         self.train()
         for epoch in tqdm(range(epochs)):
             for batch in tqdm(dataloader):
