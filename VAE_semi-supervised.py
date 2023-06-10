@@ -144,7 +144,7 @@ class Semi_supervised_VAE(nn.Module):
         z = self.middel_3(torch.cat((z, y_hat), dim=1))
         mu, log_var = torch.split(
             self.decoder.forward(z), self.channels * self.input_dim * self.input_dim, dim=1)
-        std = torch.exp(0.5 * log_var)
+        std = torch.exp(log_var)
         return mu, std
 
     def classify(self, x):
@@ -184,11 +184,11 @@ class Semi_supervised_VAE(nn.Module):
 
         z = self.reparameterization(mu, log_var)
 
-        decode_mu, decode_std = self.decode(z, y_hat)
+        decode_mu, decode_var = self.decode(z, y_hat)
 
         log_posterior = log_Normal(z, mu, log_var)
         log_prior = log_standard_Normal(z)
-        log_like = (1 / (2 * decode_std ** 2) * nn.functional.mse_loss(decode_mu, x.flatten(
+        log_like = (1 / (2 * decode_var) * nn.functional.mse_loss(decode_mu, x.flatten(
             start_dim=1, end_dim=-1), reduction="none"))
 
         reconstruction_error = torch.sum(log_like, dim=-1)
