@@ -127,7 +127,7 @@ class VAE(nn.Module):
         log_posterior = log_Normal(z, mu, log_var)
         log_prior = log_standard_Normal(z)
         log_like = (1 / (2 * decode_var) * nn.functional.mse_loss(decode_mu, x.flatten(
-            start_dim=1, end_dim=-1), reduction="none"))
+            start_dim=1, end_dim=-1), reduction="none")) + 0.5 * torch.log(decode_var) + 0.5 * torch.log(2 * torch.tensor(np.pi))
 
         reconstruction_error = torch.sum(log_like, dim=-1).mean()
         regularizer = - torch.sum(log_prior - log_posterior, dim=-1).mean()
@@ -145,13 +145,9 @@ class VAE(nn.Module):
     def initialise(self):
         def _init_weights(m):
             if isinstance(m, nn.Linear):
-                nn.init.sparse_(m.weight, sparsity=0.1)
-                if m.bias is not None:
-                    m.bias.data.fill_(3)
-            elif isinstance(m, nn.Conv2d) or isinstance(m, nn.ConvTranspose2d):
-                nn.init.dirac_(m.weight)
-                if m.bias is not None:
-                    m.bias.data.fill_(0)
+                nn.init.xavier_uniform_(
+                    m.weight, gain=nn.init.calculate_gain('leaky_relu'))
+                m.bias.data.fill_(0)
 
         self.apply(_init_weights)
 
@@ -164,7 +160,7 @@ class VAE(nn.Module):
         reconstruction_errors = []
         regularizers = []
 
-        # self.initialise()
+        self.initialise()
         self.train()
         for epoch in tqdm(range(epochs)):
             for batch in tqdm(dataloader):
