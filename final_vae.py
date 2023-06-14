@@ -399,7 +399,7 @@ if __name__ == "__main__":
             
     
     
-    from interpolation import interpolate_between_two_images, interpolate_between_three_images
+    from helper_functions import interpolate_between_two_images, interpolate_between_three_images
     
     interpolate_between_two_images(VAE, 452305, 475106, main_path, results_folder=results_folder)
     interpolate_between_three_images(VAE, 452305, 475106, 273028, main_path, results_folder=results_folder)
