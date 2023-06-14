@@ -20,10 +20,11 @@ for i in range(len(data)):
         "C:/Users/andre/Desktop/singlecell", "singh_cp_pipeline_singlecell_images", data[i, 2], data[i, 4])
     if os.path.exists(file_path):
         image = np.load(file_path)
+        new_image = []
         for channel in range(image.shape[2]):
-            max_val = float(np.max(image[:, :, channel]))
-            image[:, :, channel] = (image[:, :, channel].astype(np.float16) / max_val)
-        X.append(image)
+            max_val = np.max(image[:, :, channel])
+            new_image.append(image[:, :, channel] / max_val)
+        new_image = np.array(new_image, dtype=np.float16).transpose(1, 2, 0)
         y.append(data[i, -1])
         compound.append(data[i, -3])
 

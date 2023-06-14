@@ -5,6 +5,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 import scipy.stats as st
 from sklearn.metrics import confusion_matrix, roc_curve, auc
 import matplotlib.pyplot as plt
+from sklearn.inspection import permutation_importance
 
 from statsmodels.stats.contingency_tables import mcnemar
 
@@ -12,9 +13,8 @@ from statsmodels.stats.contingency_tables import mcnemar
 X_basic = np.load("latent_space_vanilla.npz")["z"]
 y = np.load("latent_space_vanilla.npz")["labels"]
 compound = np.load("latent_space_vanilla.npz")["compound"]
-'''
 X_semi = np.load("latent_space_semi.npz")["z"]
-'''
+
 
 index = np.where(y != 'DMSO')
 
@@ -35,7 +35,7 @@ def label_encoder(x):
 
 for i in range(len(y)):
     y[i]=label_encoder(y[i])
-
+y=y.astype('int16')
 #get unique compunds
 list_of_compounds = np.unique(compound)
 
@@ -47,12 +47,12 @@ model_semi = SVC(kernel='linear', gamma='scale')
 score_basic = []
 score_semi = []
 
-pred_basic = np.array(['0'])
-pred_semi = []
+pred_basic = np.array([0])
+pred_semi = np.array[[0]]
 
 num_data=[]
 
-real_label = np.array(['0'])
+real_label = np.array([0])
 
 # Define feature sensitivities
 feature_sensitivity_basic = []
@@ -73,11 +73,10 @@ for Unique_Compound in list_of_compounds:
     X_basic_test = X_basic[test_comp]
     X_basic_train = X_basic[train_comp]
 
-
     #fit models
     model_basic.fit(X_basic_train, y_train)
-    predict=model_basic.predict(X_basic_test)
-    pred_basic = np.hstack((pred_basic, predict))
+    predict_basic=model_basic.predict(X_basic_test)
+    pred_basic = np.hstack((pred_basic, predict_basic))
 
     print(pred_basic.shape)
 
@@ -85,26 +84,51 @@ for Unique_Compound in list_of_compounds:
     score_basic.append(model_basic.score(X_basic_test, y_test)) 
     real_label = np.hstack((real_label,y_test))  
     print(real_label.shape)
-    '''
-    #compute decision function and compute gradients and store
-    X_basic_test_tensor=torch.tensor(X_basic_test, device=device, dtype=torch.float32, requires_grad=True)
-    output_basic = torch.tensor(model_basic.decision_function(X_basic_test), device=device, dtype=torch.float32, requires_grad=True)
-    output_basic.backward()
-    gradients_basic = X_basic_test_tensor.grad.numpy()
-    
-    feature_sensitivity_basic.append(gradients_basic.mean(axis=0))
-    '''
-    '''
+
+    #sensitivity 
+    result_basic = permutation_importance(model_basic, X_basic_test, y_test, n_repeats=10, random_state=0)
+    importance_basic = result_basic.importances_mean
+    feature_sensitivity_basic.append(importance_basic)
+
     #index semi VAE train and test
     X_semi_train = X_semi[train_comp]
     X_semi_test = X_semi[test_comp]
 
     #fit models
     model_semi.fit(X_semi_train, y_train)
-    pred_semi.append(model_semi.predict(X_semi_test))
+    predict_semi = (model_semi.predict(X_semi_test))
+    pred_semi = np.hstack((pred_semi,predict_semi))
 
     #append scores and test labels
-    score_semi.append(model_semi.score(pred_semi, y_test))
+    score_semi.append(model_semi.score(X_semi_test, y_test))
+
+    #sensitivity 
+    result_semi = permutation_importance(model_semi, X_semi_test, y_test, n_repeats=10, random_state=0)
+    importance_semi = result_semi.importances_mean
+    feature_sensitivity_semi.append(importance_semi)
+
+
+    '''
+    #compute decision function and compute gradients and store
+    X_basic_test_tensor=torch.tensor(X_basic_test, device=device, dtype=torch.float32, requires_grad=True)
+    output_basic = torch.tensor(model_basic.decision_function(X_basic_test), device=device, dtype=torch.float32, requires_grad=True)
+    y_test_tensor = torch.tensor(y_test, device=device)
+    loss = torch.nn.functional.hinge_embedding_loss(output_basic, y_test_tensor.view(-1,1))
+    loss.backward()
+    gradients_basic = X_basic_test_tensor.grad.numpy()
+    
+    X_basic_test_tensor = torch.tensor(X_basic_test, device=device, dtype=torch.float32, requires_grad=True)
+    output_basic = model_basic(X_basic_test_tensor)  # Assumes model_basic is a PyTorch model
+    y_test_tensor = torch.tensor(y_test, device=device)
+    loss = torch.nn.functional.hinge_embedding_loss(output_basic, y_test_tensor.view(-1,1))
+    loss.backward()
+    gradients_basic = X_basic_test_tensor.grad.numpy()
+
+    
+    feature_sensitivity_basic.append(gradients_basic.mean(axis=0))
+    '''
+    '''
+    
 
     # calculate gradients for semi model
     X_semi_test_tensor=torch.tensor(X_semi_test, device=device, dtype=torch.float32, requires_grad=True)
@@ -114,13 +138,32 @@ for Unique_Compound in list_of_compounds:
     feature_sensitivity_semi.append(gradients_semi.mean(axis=0).numpy())
     '''
 pred_basic=pred_basic[1:]
+pred_semi=pred_semi[1:]
 real_label=real_label[1:]
 
 num_data = np.array(num_data)
-score_basic = np.array(score_basic)
 
-score=np.sum(num_data*score_basic)
-#define and plot cf-matix and plot
+score_basic = np.array(score_basic)
+score_b=np.sum(num_data*score_basic)
+
+score_semi=np.array(score_semi)
+score_s=np.sum(num_data*score_basic)
+
+feature_sensitivity_basic = np.vstack(feature_sensitivity_basic)
+mean_importance_basic = np.mean(feature_sensitivity_basic, axis=0)
+abs_mean_importance_basic = np.mean(abs(feature_sensitivity_basic), axis=0)
+
+idx_max_basic=np.argsort(mean_importance_basic)[::-1][:5]
+idx_min_basic=np.argsort(mean_importance_basic)[::-1][-5:]
+idx_absmax_basic=np.argsort(abs_mean_importance_basic)[::-1][:10]
+
+feature_sensitivity_semi = np.vstack(feature_sensitivity_semi)
+mean_importance_semi = np.mean(feature_sensitivity_semi, axis=0)
+abs_mean_importance_semi = np.mean(abs(feature_sensitivity_semi), axis=0)
+
+idx_max_semi=np.argsort(mean_importance_semi)[::-1][:5]
+idx_min_semi=np.argsort(mean_importance_semi)[::-1][-5:]
+idx_absmax_basic=np.argsort(abs_mean_importance_semi)[::-1][:10]
 '''
 Confusion_matrix_basic = confusion_matrix(pred_basic, real_label, normalize='true')
 #Confusion_matrix_semi = confusion_matrix(pred_semi, real_label)
@@ -142,7 +185,7 @@ plt.yticks(np.arange(len(np.unique(y))), np.unique(y))
 plt.title("Confusion matrix semi-supervised")
 plt.colorbar()
 plt.show()
-
+'''
 
 #get contigency table and perform mcnemar
 contingency_table = np.zeros(2,2)
@@ -159,4 +202,3 @@ for i in range(len(real_label)):
 test_results = mcnemar(contingency_table, exact=True)
 
 print(test_results)
-'''
