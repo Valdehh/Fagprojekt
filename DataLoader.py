@@ -23,6 +23,7 @@ class BBBC(Dataset):
             # this could also be other errors, but this is the most likely
             raise ValueError("Please change variable 'main_path' to the path of the data folder (should contain metadata.csv, ...)")
         
+
         self.col_names = self.meta.columns
         self.folder_path = folder_path
         self.train_size, self.test_size = subset
@@ -36,6 +37,26 @@ class BBBC(Dataset):
         
     def __len__(self,):
         return self.test_size if self.test else self.train_size
+    
+
+    def label_encoder(self, x):
+        classes = np.array(['DMSO', 'Actin disruptors', 'Aurora kinase inhibitors',
+       'Cholesterol-lowering', 'DNA damage', 'DNA replication',
+       'Eg5 inhibitors', 'Epithelial', 'Kinase inhibitors',
+       'Microtubule destabilizers', 'Microtubule stabilizers',
+       'Protein degradation', 'Protein synthesis'])
+        
+        return np.where(classes == x)[0][0]
+    
+    def label_decoder(self, x):
+        classes = np.array(['DMSO', 'Actin disruptors', 'Aurora kinase inhibitors',
+       'Cholesterol-lowering', 'DNA damage', 'DNA replication',
+       'Eg5 inhibitors', 'Epithelial', 'Kinase inhibitors',
+       'Microtubule destabilizers', 'Microtubule stabilizers',
+       'Protein degradation', 'Protein synthesis'])
+        
+        return classes[x]
+
 
     def normalize_to_1(self, x):
         # helper function to normalize to [0...1]
@@ -65,20 +86,69 @@ class BBBC(Dataset):
 
         sample = {"id": id, 
                   "image": torch.tensor(image), 
-                  "moa": moa, 
+                  "moa": self.label_encoder(moa), 
                   "compound": compound,
+                  "moa_name": moa,
                   }
 
         return sample
 
 
+class get_image_based_on_id(BBBC):
+    # class to get a picture based on the id solely
+    # (used when doing interpolation, as we want specific images)
+    def __init__(self, folder_path, meta_path, normalize='to_1'):
+        subset = (1,1)
+        exclude_dmso=False
+        shuffle=False
+        test=False
+
+
+        super().__init__(folder_path, meta_path, subset, test, normalize, exclude_dmso, shuffle)
+        try:
+            self.meta = pd.read_csv(meta_path, index_col=0)
+        except:
+            raise ValueError("Please change variable 'main_path' to the path of the data folder (should contain metadata.csv, ...)")
+    
+    def __getitem__(self, idx): 
+        img_name = os.path.join(self.folder_path,
+                                self.meta[self.col_names[1]].iloc[idx], 
+                                self.meta[self.col_names[3]].iloc[idx])
+    
+        image = np.load(img_name)
+
+        # convert the data to appropriate format
+        if self.normalize == 'to_1':
+            image = self.normalize_to_1(image)
+        else:
+            image = self.normalize_to_255(image)
+
+        moa = self.meta[self.col_names[-1]].iloc[idx]
+        compound = self.meta[self.col_names[-3]].iloc[idx]
+        id = self.meta.index[idx]
+
+        sample = {"id": id, 
+                  "image": torch.tensor(image), 
+                  "moa": moa, 
+                  "compound": compound,
+                  }
+
+        return sample
+    
+
 if __name__ == "__main__":
     batch_size = 5
 
-    train_size = 25
-    test_size = 25
+    train_size = 100_000
+    test_size = 10_000
 
-    exclude_dmso = True
+    exclude_dmso = False
+    shuffle=True
+
+    torch.backends.cudnn.deterministic = True
+    torch.manual_seed(42)
+    torch.cuda.manual_seed(42)
+    np.random.seed(42)
 
     # path to singlecells
 
@@ -94,47 +164,27 @@ if __name__ == "__main__":
                             subset=subset,
                             test=False,
                             exclude_dmso=exclude_dmso,
-                            shuffle=True)
+                            shuffle=shuffle)
 
     dataset_test = BBBC(folder_path=main_path + "singh_cp_pipeline_singlecell_images",
                             meta_path=main_path + "metadata.csv",
                             subset=subset,
                             test=True,
                             exclude_dmso=exclude_dmso,
-                            shuffle=True)
+                            shuffle=shuffle)
 
     X_train = DataLoader(dataset_train, batch_size=batch_size)#, shuffle=True, num_workers=0)
 
     X_test = DataLoader(dataset_test, batch_size=batch_size)#, shuffle=True, num_workers=0)  
 
+    
+    # distribution of classes in train and test set
+    print("Train set:")
+    print(dataset_train.meta[dataset_train.col_names[-1]].value_counts())
+    print("Test set:")
+    print(dataset_test.meta[dataset_test.col_names[-1]].value_counts())
 
-
-    # plot number of batches of size batch_size in one plot
-
-    num_batches = 5
-
-    fig, axs = plt.subplots(num_batches, batch_size, figsize=(10, 8))
-
-    for i, batch in enumerate(X_train):
-        if i == num_batches:
-            break
-        for j, sample in enumerate(batch["image"]):
-            print("batch: {}, image: {}, moa: {}, compound: {}".format(i,batch['idx'][j], batch['moa'][j], batch['compound'][j]))
-            axs[i,j].imshow(sample.reshape(68,68,3), cmap="gray")
-            axs[i,j].set_title("batch: {}, image: {}".format(i,batch['idx'][j]))
-            axs[i,j].axis("off")
-    plt.tight_layout()
-    plt.show()
-
-    fig, axs = plt.subplots(num_batches, batch_size, figsize=(10, 8))
-
-    for i, batch in enumerate(X_test):
-        if i == num_batches:
-            break
-        for j, sample in enumerate(batch["image"]):
-            print("batch: {}, image: {}, moa: {}, compound: {}".format(i,batch['idx'][j], batch['moa'][j], batch['compound'][j]))
-            axs[i,j].imshow(sample.reshape(68,68,3), cmap="gray")
-            axs[i,j].set_title("batch: {}, image: {}".format(i,batch['idx'][j]))
-            axs[i,j].axis("off")
-    plt.tight_layout()
-    plt.show()
+    for batch in X_train:
+        print(batch['image'].shape)
+        print(batch['moa'].shape)
+        break
