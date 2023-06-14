@@ -8,7 +8,7 @@
 
 import numpy as np
 import torch
-from dataloader import get_image_based_on_id
+from DataLoader import get_image_based_on_id
 import matplotlib.pyplot as plt
 
 
