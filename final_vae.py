@@ -75,7 +75,7 @@ class VAE(nn.Module):
         self.latent_dim = latent_dim
         self.channels = channels
         self.input_dim = input_dim
-        self.beta = beta # factor term on regularizer
+        self.beta = beta
         self.var = 0
 
     def encode(self, x):
@@ -114,7 +114,6 @@ class VAE(nn.Module):
         log_like = (1 / (2 * (decode_var)) * nn.functional.mse_loss(decode_mu, x.flatten(
             start_dim=1, end_dim=-1), reduction="none")) + 0.5 * torch.log(decode_var) + 0.5 * torch.log(2 * torch.tensor(np.pi))
 
-
         reconstruction_error = torch.sum(log_like, dim=-1).mean()
         
 
@@ -122,7 +121,7 @@ class VAE(nn.Module):
 
         #tqdm.write(
         #    f"ELBO: {elbo.item()}, Reconstruction error: {reconstruction_error.item()}, Regularizer: {regularizer.item()}, Variance: {torch.mean(decode_var).item()}")
-
+        print(f"ELBO: {elbo.item()}, Reconstruction error: {reconstruction_error.item()}, Regularizer: {regularizer.item()}, Variance: {torch.mean(decode_var).item()}")
         return  (elbo, reconstruction_error, regularizer) if not save_latent else (elbo, reconstruction_error, regularizer, z)
 
     def initialise(self):
@@ -170,7 +169,7 @@ class VAE(nn.Module):
         )
     
     def test_eval(self, dataloader, save_latent=False, results_folder=''):
-        # only works if len of dataloader is divisible by batch_size (alternatively dataloader(..., drop_last=True))
+        # only wors if len of dataloader is divisible by batch_size
         REs, KLs, ELBOs = [], [], []
 
         moa, compound = [], []
@@ -181,7 +180,7 @@ class VAE(nn.Module):
             for i, batch in tqdm(enumerate(dataloader)):
                 x = batch["image"].to(device)
 
-                moa, compound = moa + batch["moa"], compound + batch["compound"]
+                moa, compound = moa + batch["moa_name"], compound + batch["compound"]
 
                 if save_latent:
                     elbo, RE, KL, z = self.forward(x, save_latent=save_latent)
@@ -260,7 +259,7 @@ def plot_ELBO(REs, KLs, ELBOs, name, results_folder):
              linestyle='-', linewidth=4, alpha=0.5)
     plt.legend(fontsize=15)
     plt.title(name, size=26, fontweight='bold')
-    plt.xlabel('Epoch',  size=22, fontweight='bold')
+    plt.xlabel('Iterations',  size=22, fontweight='bold')
     plt.ylabel('Loss',  size=22, fontweight='bold')
     plt.tick_params(axis='both', which='major', labelsize=18)
     plt.tight_layout()
@@ -274,28 +273,25 @@ def plot_ELBO(REs, KLs, ELBOs, name, results_folder):
 
 
 if __name__ == "__main__":
-    beta = 0.1
-
     latent_dim = 300
-    epochs = 120
+    epochs = 100
     batch_size = 100
 
     input_dim = 68
     channels = 3
 
-    train_size = 390716
-    test_size = 97679
+    train_size = 100_000
+    test_size = 30_000
 
     #latent_dim = 10
-    #epochs, batch_size, train_size = 2, 10, 10
+   # epochs, batch_size, train_size, test_size = 2, 10, 10, 2000
 
-    # ensure reproducability / consistency accross tests
     torch.backends.cudnn.deterministic = True
     torch.manual_seed(42)
     torch.cuda.manual_seed(42)
     np.random.seed(42)
 
-    from DataLoader import BBBC
+    from dataloader import BBBC
 
     main_path = "/zhome/70/5/14854/nobackup/deeplearningf22/bbbc021/singlecell/"
     #main_path = "/Users/nikolaj/Fagprojekt/Data/"
@@ -324,11 +320,12 @@ if __name__ == "__main__":
     X_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=False, drop_last=True)
     X_test = DataLoader(dataset_test, batch_size=batch_size, shuffle=False, drop_last=True)
 
+
     VAE = VAE(
         latent_dim=latent_dim,
         input_dim=input_dim,
         channels=channels,
-        beta=beta
+        beta=0.1
     ).to(device)
     
 
@@ -336,26 +333,22 @@ if __name__ == "__main__":
     boolean = len(classes) == 13 if not exclude_dmso else len(classes) == 12
 
     if not boolean: 
-        raise Warning("The number of unique drugs in the test set is not 13")
+       raise Warning("The number of unique drugs in the test set is not 13")
 
     #print("VAE:")
     #summary(VAE, input_size=(channels, input_dim, input_dim))
+    results_folder = 'final_vae/'
+
+    if not(os.path.exists(results_folder)):
+        os.mkdir(results_folder)
+
 
     encoder_VAE, decoder_VAE, train_REs, train_KLs, train_ELBOs = VAE.train_VAE(dataloader=X_train, epochs=epochs)
 
-    test_REs, test_KLs, test_ELBOs = VAE.test_VAE(dataloader=X_test)
+    test_REs, test_KLs, test_ELBOs = VAE.test_eval(dataloader=X_test, save_latent=True, results_folder=results_folder)
 
-    np.savez("train_ELBOs.npz", train_ELBOs=train_ELBOs)
-    np.savez("train_REs.npz", train_REs=train_REs)
-    np.savez("train_KLs.npz", train_KLs=train_KLs)
-
-    np.savez("test_ELBOs.npz", test_ELBOs=test_ELBOs)
-    np.savez("test_REs.npz", test_REs=test_REs)
-    np.savez("test_KLs.npz", test_KLs=test_KLs)
-
-    results_folder = 'new_net/'
-    if not(os.path.exists(results_folder)):
-        os.mkdir(results_folder)
+    # np.savez("latent_space_VAE.npz", latent_space=latent_space.detach().numpy())
+    
 
     train_images_folder = results_folder +'train_images/'
 
@@ -366,7 +359,13 @@ if __name__ == "__main__":
     
     if not(os.path.exists(test_images_folder)):
         os.mkdir(test_images_folder)
-
+    
+    np.savez(results_folder + "train_ELBOs.npz", train_ELBOs=train_ELBOs)
+    np.savez(results_folder + "train_REs.npz", train_REs=train_REs)
+    np.savez(results_folder + "train_KLs.npz", train_KLs=train_KLs)
+    np.savez(results_folder + "test_ELBOs.npz", test_ELBOs=test_ELBOs)
+    np.savez(results_folder + "test_REs.npz", test_REs=test_REs)
+    np.savez(results_folder + "test_KLs.npz", test_KLs=test_KLs)
 
 
     torch.save(encoder_VAE, results_folder + "encoder.pt")
@@ -392,9 +391,18 @@ if __name__ == "__main__":
             image = dataset_test[index]
             plot_1_reconstruction(image['image'],
                                 vae = VAE,
-                                name=image['moa'] + ' ' + str(image['id']), 
+                                name=image['moa_name'] + ' ' + str(image['id']), 
                                 results_folder=test_images_folder, 
                                 latent_dim=latent_dim, 
                                 channels=channels, 
                                 input_dim=input_dim)
+            
+    
+    
+    from interpolation import interpolate_between_two_images, interpolate_between_three_images
+    
+    interpolate_between_two_images(VAE, 452305, 475106, main_path, results_folder=results_folder)
+    interpolate_between_three_images(VAE, 452305, 475106, 273028, main_path, results_folder=results_folder)
+
+
 
