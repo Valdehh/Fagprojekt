@@ -56,7 +56,7 @@ class decoder(nn.Module):
                                 2 * channels * self.input_dim * self.input_dim)
 
 
-    def forward(self, x):
+    def forward(self, x):   
         x = self.input(x)
         x = nn.LeakyReLU(0.01)(x)
         x = x.view(-1, 16, self.input_dim, self.input_dim)
