@@ -1,3 +1,7 @@
+############################################################################################################
+# grid_search.py
+# This script is used search for the optimal latent dimension for the VAE. 
+############################################################################################################
 
 from final_vae import VAE, plot_ELBO, plot_1_reconstruction
 import torch
@@ -6,7 +10,7 @@ import os
 from torch.utils.data import DataLoader
 import sys
 
-
+# index is the index of the latent dimension to be tested (of the list of latent dimensions)
 index = int(sys.argv[1]) - 1
 
 latent_dims = [500]

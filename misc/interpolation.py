@@ -1,8 +1,8 @@
 ############################################################################################################
-# INTERPOLATION
-#
-# This script is used to interpolate between images in the latent space (and creat plots)
+# interpolation.py
+# This script is used to interpolate between images in the latent space (and create plots for the report).
 ############################################################################################################
+
 import numpy as np
 import torch
 import sys

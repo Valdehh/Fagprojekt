@@ -1,3 +1,8 @@
+############################################################################################################
+# DataLoader.py
+# This script contains the main dataloader used in the project. (especially when run on the cluster).
+############################################################################################################
+
 # Importing the libraries
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader

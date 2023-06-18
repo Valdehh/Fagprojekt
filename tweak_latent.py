@@ -1,3 +1,8 @@
+############################################################################################################
+# tweak_latent.py
+# This script is used to tweak the latent space of the VAE and plot the corresponding images.
+############################################################################################################
+
 import numpy as np
 import torch
 import numpy as np

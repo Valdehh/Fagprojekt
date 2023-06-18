@@ -1,3 +1,8 @@
+############################################################################################################
+# latent_space_Classifier.py
+# This script is used to build our classifier and perform the statistical tests.
+############################################################################################################
+
 import torch
 from sklearn.svm import SVC
 import numpy as np

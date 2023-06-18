@@ -1,3 +1,9 @@
+############################################################################################################
+# ANOVA_pixel.py
+# This script is used to test what effect compoud and label has on each pixel.
+############################################################################################################
+
+
 import numpy as np
 import pandas as pd
 import statsmodels.api as sm
