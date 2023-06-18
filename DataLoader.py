@@ -201,12 +201,7 @@ if __name__ == "__main__":
                                       main_path + "metadata.csv",
                                       normalize='to_1')
 
-    for cell in bad_cells:
-        sample = get_image[cell]
-        plt.imshow(sample['image'].reshape((68,68,3)))
-        plt.title(sample['moa'] + " - " + str(sample['id']))
-        plt.savefig("plots/bad_cells/" + str(cell) + ".png")
-        plt.show()
+
 
     for i in range(1000):
         sample = dataset_test[i+1300]
