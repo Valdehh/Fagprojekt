@@ -244,7 +244,7 @@ class Semi_supervised_VAE(nn.Module):
         ELBOs = []
 
         self.alpha = 0.1 * dataloader.__len__()
-        # self.initialise()
+        self.initialise()
         self.train()
         for epoch in tqdm(range(epochs)):
             for batch in dataloader:
