@@ -1,7 +1,9 @@
 library(reticulate)
 np <- import("numpy")
 
+##################################################################################################
 # SEMI-SUPERVISED
+##################################################################################################
 
 semi10 <- np$load("statistical_tests/seeds/10semi_bbbc/test_ELBOs.npz")
 semi30 <- np$load("statistical_tests/seeds/30semi_bbbc/test_ELBOs.npz")
@@ -9,7 +11,7 @@ semi42 <- np$load("statistical_tests/seeds/42semi_bbbc/test_ELBOs.npz")
 
 data1 <- semi10$f[["test_ELBOs"]]
 data2 <- semi30$f[["test_ELBOs"]]
-data3 <- (semi42$f[["test_ELBOs"]])[0:100]
+data3 <- (semi42$f[["test_ELBOs"]])[0:100]  # same size as the other two (doesnt matter though)
 
 
 seeds <- factor(c(rep(10, 100), rep(30, 100), rep(42, 100)))
@@ -21,7 +23,7 @@ res.aov <- aov(ELBO ~ seed, data = df)
 summary(res.aov)
 
 ##################################################################################################
-# Plotting:
+# Plotting the histograms: (they look fairly normal)
 ##################################################################################################
 
 library(ggplot2)
@@ -44,27 +46,22 @@ ggsave("semi3.png", width = 10, height = 10, units = "cm")
 
 
 ##################################################################################################
-
+# means
 mean(data1)
 mean(data2)
 mean(data3)
 
-
+##################################################################################################
 # VANILLA-VAE
+##################################################################################################
 
 van10 <- np$load("statistical_tests/seeds/10van/test_ELBOs.npz")
 van30 <- np$load("statistical_tests/seeds/30van/test_ELBOs.npz")
 van42 <- np$load("statistical_tests/seeds/42van/test_ELBOs.npz")
 
-
 data4 <- van10$f[["test_ELBOs"]]
 data5 <- van30$f[["test_ELBOs"]]
 data6 <- (van42$f[["test_ELBOs"]])[0:100]
-
-# look at the histograms, they seem fairly normal
-hist(data4)
-hist(data5)
-hist(data6)
 
 seeds <- factor(c(rep(10, 100), rep(30, 100), rep(42, 100)))
 
@@ -78,7 +75,7 @@ mean(data5)
 mean(data6)
 
 ##################################################################################################
-# Plotting:
+# Plotting the histograms: (they look fairly normal)
 ##################################################################################################
 
 df4 <- data.frame(ELBO = data4)
