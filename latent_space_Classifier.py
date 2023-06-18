@@ -41,8 +41,8 @@ y=y.astype('int16')
 list_of_compounds = np.unique(compound)
 
 #define SVC
-model_basic = SVC(kernel='linear', gamma='scale')
-model_semi = SVC(kernel='linear', gamma='scale')
+model_basic = SVC(kernel='rbf', gamma='scale')
+model_semi = SVC(kernel='rbf', gamma='scale')
 
 #Define lists for 
 score_basic = []
@@ -79,18 +79,18 @@ for Unique_Compound in list_of_compounds:
     predict_basic=model_basic.predict(X_basic_test)
     pred_basic = np.hstack((pred_basic, predict_basic))
 
-    print(pred_basic.shape)
+   
 
     #append scores and test labels
     score_basic.append(model_basic.score(X_basic_test, y_test)) 
     real_label = np.hstack((real_label,y_test))  
-    print(real_label.shape)
+    
 
     #sensitivity 
     result_basic = permutation_importance(model_basic, X_basic_test, y_test, n_repeats=5, random_state=0)
     importance_basic = result_basic.importances_mean
     feature_sensitivity_basic.append(importance_basic)
-
+    
     #index semi VAE train and test
     X_semi_train = X_semi[train_comp]
     X_semi_test = X_semi[test_comp]
@@ -102,11 +102,16 @@ for Unique_Compound in list_of_compounds:
 
     #append scores and test labels
     score_semi.append(model_semi.score(X_semi_test, y_test))
+    print(model_semi.score(X_semi_test, y_test))
 
-    #sensitivity 
+    print(model_basic.score(X_basic_test, y_test))
+    print("__________________________________")
+    #sensitivity
+    
     result_semi = permutation_importance(model_semi, X_semi_test, y_test, n_repeats=5, random_state=0)
     importance_semi = result_semi.importances_mean
     feature_sensitivity_semi.append(importance_semi)
+    
 
 
     '''
@@ -144,7 +149,7 @@ score_basic = np.array(score_basic)
 score_b=np.sum(num_data*score_basic)
 
 score_semi=np.array(score_semi)
-score_s=np.sum(num_data*score_basic)
+score_s=np.sum(num_data*score_semi)
 
 print("score for basic" + str(score_b))
 print("score for semi" + str(score_s))
@@ -199,7 +204,7 @@ plt.show()
 '''
 
 #get contigency table and perform mcnemar
-contingency_table = np.zeros(2,2)
+contingency_table = np.zeros((2,2))
 for i in range(len(real_label)):
     if pred_basic[i] == real_label[i] and pred_semi[i] == real_label[i]:
         contingency_table[0,0] += 1
