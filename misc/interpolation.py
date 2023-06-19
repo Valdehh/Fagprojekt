@@ -188,7 +188,7 @@ def interpolate_between_two_images_semi(vae, index_image_1, index_image_2, main_
 ############################################################################################################
 
 
-from final_vae import VAE, encoder, decoder
+from vae_unsupervised import VAE, encoder, decoder
 
 vae = VAE(300, 68, 3, 0.1)
 
@@ -215,7 +215,7 @@ interpolate_between_three_images(vae, 308072, 328098, 386683, main_path, 'misc/p
 ############################################################################################################
 
 
-from final_semi import Semi_supervised_VAE, encoder, decoder, classifier
+from VAE_semi-supervised import Semi_supervised_VAE, encoder, decoder, classifier
 
 encoder_ = torch.load('/Users/nikolaj/Downloads/semi_bbbc/encoder.pt', map_location=device)
 decoder_ = torch.load('/Users/nikolaj/Downloads/semi_bbbc/decoder.pt', map_location=device)
