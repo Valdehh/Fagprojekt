@@ -5,9 +5,8 @@ import torch.nn as nn
 from torchvision import datasets
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
-from sklearn import svm
-from torchsummary import summary
-
+import sys
+import os
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -42,17 +41,15 @@ class encoder(nn.Module):
     def __init__(self, input_dim, middel_dim, channels):
         super(encoder, self).__init__()
         self.input_dim = input_dim
+
         self.conv1 = nn.Conv2d(channels, 16, kernel_size=5, padding="same")
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=5, padding="same")
         self.fully_connected = nn.Linear(
-            32 * self.input_dim * self.input_dim, middel_dim)
+            16 * self.input_dim * self.input_dim, middel_dim)
 
     def forward(self, x):
         x = self.conv1(x)
-        x = nn.functional.relu(x)
-        x = self.conv2(x)
-        x = nn.functional.relu(x)
-        x = x.view(-1, 32 * self.input_dim * self.input_dim)
+        x = nn.LeakyReLU(0.01)(x)
+        x = x.view(-1, 16 * self.input_dim * self.input_dim)
         x = self.fully_connected(x)
         return x
 
@@ -64,26 +61,23 @@ class decoder(nn.Module):
         self.channels = channels
 
         self.input = nn.Linear(
-            middel_dim, 32 * self.input_dim * self.input_dim)
-        self.conv1 = nn.ConvTranspose2d(
-            32, 16, kernel_size=5, stride=1, padding=5 - (self.input_dim % 5))
+            middel_dim,   16 * self.input_dim * self.input_dim)
         self.conv2 = nn.ConvTranspose2d(
             16, channels, kernel_size=5, stride=1, padding=5 - (self.input_dim % 5))
-        self.fully_connected = nn.Linear(
-            channels * self.input_dim * self.input_dim, 2 * channels * self.input_dim * self.input_dim)
-        self.softmax = nn.Softmax(dim=2)
+        self.output = nn.Linear(channels * self.input_dim * self.input_dim,
+                                2 * channels * self.input_dim * self.input_dim)
+
 
     def forward(self, x):
         x = self.input(x)
-        x = nn.functional.relu(x)
-        x = x.view(-1, 32, self.input_dim, self.input_dim)
-        x = self.conv1(x)
-        x = nn.functional.relu(x)
+        x = nn.LeakyReLU(0.01)(x)
+        x = x.view(-1, 16, self.input_dim, self.input_dim)
         x = self.conv2(x)
-        x = nn.functional.relu(x)
-        x = x.view(-1, self.channels * self.input_dim * self.input_dim)
-        x = self.fully_connected(x)
+        x = nn.LeakyReLU(0.01)(x)
+        x = x.view(-1,  self.channels * self.input_dim * self.input_dim)
+        x = self.output(x)
         return x
+
 
 
 class classifier(nn.Module):
@@ -93,17 +87,14 @@ class classifier(nn.Module):
         self.input_dim = input_dim
         self.channels = channels
 
-        self.conv1 = nn.Conv2d(channels, 8, kernel_size=5, padding="same")
-        self.conv2 = nn.Conv2d(8, 16, kernel_size=5, padding="same")
+        self.conv1 = nn.Conv2d(channels, 16, kernel_size=5, padding="same")
         self.fully_connected = nn.Linear(
             16 * self.input_dim * self.input_dim, self.classes)
         self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
         x = self.conv1(x)
-        x = nn.functional.relu(x)
-        x = self.conv2(x)
-        x = nn.functional.relu(x)
+        x = nn.LeakyReLU(0.01)(x)
         x = x.view(-1, 16 * self.input_dim * self.input_dim)
         x = self.fully_connected(x)
         x = self.softmax(x)
@@ -111,7 +102,7 @@ class classifier(nn.Module):
 
 
 class Semi_supervised_VAE(nn.Module):
-    def __init__(self, classes, latent_dim, input_dim, channels):
+    def __init__(self, classes, latent_dim, input_dim, channels, beta=1):
         super(Semi_supervised_VAE, self).__init__()
 
         self.latent_dim = latent_dim
@@ -119,9 +110,8 @@ class Semi_supervised_VAE(nn.Module):
         self.channels = channels
         self.input_dim = input_dim
         self.alpha = 0.1
-        self.middel_dim = 32 * input_dim * input_dim
-
-        self.eps = torch.normal(mean=0, std=torch.ones(latent_dim)).to(device)
+        self.beta = beta
+        self.middel_dim = 1000 # input_dim * input_dim
 
         self.encoder = encoder(input_dim, self.middel_dim, channels)
         self.decoder = decoder(input_dim, self.middel_dim, channels)
@@ -138,6 +128,7 @@ class Semi_supervised_VAE(nn.Module):
         return mu, log_var
 
     def reparameterization(self, mu, log_var):
+        self.eps = torch.normal(mean=0, std=torch.ones(self.latent_dim)).to(device)
         return mu + torch.exp(0.5*log_var) * self.eps
 
     def decode(self, z, y_hat):
@@ -152,7 +143,7 @@ class Semi_supervised_VAE(nn.Module):
 
     def ELBO_unlabelled(self, y_prob, reconstruction_error, KL):
         H = - torch.sum(torch.log(y_prob) * y_prob, dim=-1).mean()
-        K_1 = - log_standard_Categorical(torch.tensor([0]), self.classes)
+        K_1 = - (log_standard_Categorical(torch.tensor([0]), self.classes)).to(device)
 
         Lxy = reconstruction_error + KL + K_1
         q_Lxy = torch.sum(y_prob * Lxy.view(-1, 1), dim=-1).mean()
@@ -162,7 +153,7 @@ class Semi_supervised_VAE(nn.Module):
         return ELBO
 
     def ELBO_labelled(self, y, y_prob, reconstruction_error, KL):
-        K_1 = - log_standard_Categorical(y, self.classes)
+        K_1 = - (log_standard_Categorical(y, self.classes)).to(device)
         log_like_y = - log_Categorical(y, y_prob, self.classes)
 
         Lxy = (reconstruction_error + KL + K_1).mean()
@@ -171,12 +162,10 @@ class Semi_supervised_VAE(nn.Module):
 
         return ELBO
 
-    def forward(self, x, y):
+    def forward(self, x, y, save_latent=False):
         # y_onehot = nn.functional.one_hot(y, num_classes=self.classes).float()
 
-        idx = y != 0  # "DMSO"
-
-        # y_labelled = y_onehot[idx]
+        idx =  y != 12 # "DMSO"
         y_labelled = y[idx]
 
         y_hat = self.classify(x)
@@ -189,10 +178,10 @@ class Semi_supervised_VAE(nn.Module):
         log_posterior = log_Normal(z, mu, log_var)
         log_prior = log_standard_Normal(z)
         log_like = (1 / (2 * decode_var) * nn.functional.mse_loss(decode_mu, x.flatten(
-            start_dim=1, end_dim=-1), reduction="none"))
+            start_dim=1, end_dim=-1), reduction="none")) + 0.5 * torch.log(decode_var) + 0.5 * torch.log(2 * torch.tensor(np.pi))
 
         reconstruction_error = torch.sum(log_like, dim=-1)
-        KL = - torch.sum(log_prior - log_posterior, dim=-1)
+        KL = - torch.sum(log_prior - log_posterior, dim=-1) * self.beta
 
         y_prob_unlabelled = y_hat[~idx]
         y_prob_labelled = y_hat[idx]
@@ -227,7 +216,7 @@ class Semi_supervised_VAE(nn.Module):
         tqdm.write(
             f"ELBO: {ELBO.item()}, Reconstruction error: {reconstruction_error.item()}, Regularizer: {KL.item()}")
 
-        return ELBO, reconstruction_error, KL
+        return (ELBO, reconstruction_error, KL) if not save_latent else (ELBO, reconstruction_error, KL, z)
 
     def initialise(self):
         def _init_weights(m):
@@ -242,77 +231,283 @@ class Semi_supervised_VAE(nn.Module):
 
         self.apply(_init_weights)
 
-    def train_VAE(self, dataloader, epochs, lr=10e-6):
-        parameters = [param for param in self.parameters()
-                      if param.requires_grad == True]
+    def train_VAE(self, dataloader, epochs, lr=10e-5):
+        parameters = [
+            param for param in self.parameters() if param.requires_grad == True
+        ]
         optimizer = torch.optim.Adam(parameters, lr=lr)
 
-        self.train()
-        self.initialise()
-
-        ELBOs = []
-        reconstruction_errors = []
+        REs = []
         KLs = []
+        ELBOs = []
 
         self.alpha = 0.1 * dataloader.__len__()
+        self.initialise()
+        self.train()
         for epoch in tqdm(range(epochs)):
-            for x_batch, y_batch in tqdm(dataloader):
-                x = x_batch.to(device)
-                y = y_batch.to(device)
+            for batch in dataloader:
+                x = batch['image'].to(device)
+                y = batch['moa'].to(device)
 
                 optimizer.zero_grad()
+                elbo, RE, KL = self.forward(x, y)
+                
+                REs, KLs, ELBOs = REs + [RE.item()], KLs + [KL.item()], ELBOs + [elbo.item()]
 
-                ELBO, reconstruction_error, KL = self.forward(x, y)
-
-                ELBOs.append(ELBO.item())
-                reconstruction_errors.append(reconstruction_error.item())
-                KLs.append(KL.item())
-
-                ELBO.backward()
+                elbo.backward()
                 optimizer.step()
 
             tqdm.write(
-                f"Epoch: {epoch+1}, ELBO: {ELBO.item()}, Reconstruction Error: {reconstruction_error.item()}, Regularizer: {KL.item()}")
+                f"Epoch: {epoch+1}, ELBO: {elbo.item()}, Reconstruction Error: {RE.item()}, Regularizer: {KL.item()}"
+            )
 
-        mu, log_var = self.encode(x)
-        latent_space = self.reparameterization(mu, log_var)
+        return (
+            self.encoder,
+            self.decoder,
+            self.classifier,
+            REs,
+            KLs,
+            ELBOs
+        )
 
-        return self.encoder, self.decoder, reconstruction_errors, KL, latent_space
+    def test_VAE(self, dataloader, save_latent=False, results_folder=''):
+        # only wors if len of dataloader is divisible by batch_size
+        REs, KLs, ELBOs = [], [], []
+
+        moa, compound = [], []
+
+        latent = np.zeros((self.latent_dim, len(dataloader) * dataloader.batch_size)).T
+        self.eval()
+        with torch.no_grad():
+            for i, batch in tqdm(enumerate(dataloader)):
+                x = batch["image"].to(device)
+                y = batch["moa"].to(device)
+
+                moa, compound = moa + batch["moa_name"], compound + batch["compound"]
+
+                if save_latent:
+                    elbo, RE, KL, z = self.forward(x, y, save_latent=save_latent)
+                    z = z.cpu().detach().numpy()
+                    latent[i*dataloader.batch_size:(i+1)*dataloader.batch_size, :] = z
+
+                else:
+                    elbo, RE, KL = self.forward(x, y)
+
+                REs, KLs, ELBOs = REs + [RE.item()], KLs + [KL.item()], ELBOs + [elbo.item()]
+
+            if save_latent: 
+                np.savez(results_folder + "latent_space.npz", z=latent, labels=moa, compound=compound)
+
+            return REs, KLs, ELBOs
+        
 
 
-latent_dim = 50
-epochs = 5
-batch_size = 10
 
-pixel_range = 256
-input_dim = 28
-channels = 1
-classes = 10
+def generate_image(X, vae, latent_dim, channels, input_dim, batch_size=1):
+    vae.eval()
+    X = X.to(device)
+    y_hat = vae.classify(X)
+    mu, log_var = vae.encode(X, y_hat)
+    eps = torch.normal(mean=0, std=torch.ones(latent_dim)).to(device)
+    z = mu + torch.exp(0.5 * log_var) * eps
+    mean, var = vae.decode(z, y_hat)
+    image = torch.normal(mean=mean, std=torch.sqrt(var)).to(device)
+    image = image.view(channels, input_dim, input_dim)
+    image = image.clip(0,1).detach().cpu().numpy()
+    return image
 
-train_size = 1000
-test_size = 1000
 
-trainset = datasets.MNIST(
-    root='./MNIST', train=True, download=True, transform=None)
-testset = datasets.MNIST(
-    root='./MNIST', train=False, download=True, transform=None)
-Xy_train = TensorDataset(trainset.data[:train_size].reshape(
-    (train_size, channels, input_dim, input_dim)).float(), trainset.targets[:train_size])
-Xy_train = DataLoader(Xy_train, batch_size=batch_size, shuffle=True)
-Xy_test = TensorDataset(testset.data[:test_size].reshape(
-    (test_size, channels, input_dim, input_dim)).float(), testset.targets[:test_size])
-Xy_test = DataLoader(Xy_test, batch_size=batch_size, shuffle=True)
+def plot_1_reconstruction(image, 
+                        vae,
+                        name, 
+                        latent_dim, 
+                        channels, 
+                        input_dim, 
+                        results_folder=''):
+    recon_image = generate_image(
+        image,
+        vae=vae,
+        latent_dim=latent_dim,
+        channels=channels,
+        input_dim=input_dim,
+    )
 
-# X = np.load("image_matrix.npz")["images"][:1000]
-# X = torch.tensor(X, dtype=torch.float32).permute(0, 3, 1, 2)
 
-VAE = Semi_supervised_VAE(classes=classes, latent_dim=latent_dim,
-                          input_dim=input_dim, channels=channels).to(device)
+    fig, ax = plt.subplots(1, 2, figsize=(10,6))
 
-# print("VAE:")
-# The summary function from torchsummary.py has been modified to work with the code by changing the following lines (ln 101):
-# total_input_size = abs(np.prod([np.prod(in_size) for in_size in input_size]) * batch_size * 4. / (1024 ** 2.))
-# summary(VAE, input_size=[(batch_size, channels, input_dim, input_dim), (batch_size,)])
+    ax = ax.flatten()
+    ax[0].imshow(image.reshape((input_dim,input_dim,channels)), cmap="gray")
+    ax[0].set_xticks([])
+    ax[0].set_yticks([])
+    ax[0].set_title('Original',  size=22,fontweight="bold")
+    ax[1].imshow(recon_image.reshape((input_dim,input_dim,channels)), cmap="gray")
+    ax[1].set_xticks([])
+    ax[1].set_yticks([])
+    ax[1].set_title('Reconstruction', size=22,fontweight="bold")
+    fig.suptitle(name,  size=26, fontweight='bold')
+    plt.tight_layout()
+    plt.savefig(results_folder + name +'.png')
+    plt.show()
+    plt.close()
 
-encoder_VAE, decoder_VAE, reconstruction_errors, regularizers, latent_space = VAE.train_VAE(
-    dataloader=Xy_train, epochs=epochs)
+def plot_ELBO(REs, KLs, ELBOs, name, results_folder):
+    fig = plt.figure(figsize=(10,6))
+    plt.plot(REs, label='Reconstruction Error', color='red', 
+             linestyle='--', linewidth=2, alpha=0.5)
+    
+    plt.plot(KLs, label='Regularizer', color='blue', 
+             linestyle='--', linewidth=2, alpha=0.5)
+    
+    plt.plot(ELBOs, label='ELBO', color='black', 
+             linestyle='-', linewidth=4, alpha=0.5)
+    plt.legend(fontsize=15)
+    plt.title(name, size=26, fontweight='bold')
+    plt.xlabel('Iterations',  size=22, fontweight='bold')
+    plt.ylabel('Loss',  size=22, fontweight='bold')
+    plt.tick_params(axis='both', which='major', labelsize=18)
+    plt.tight_layout()
+    plt.savefig(results_folder + name + '.png')
+    plt.show()
+    plt.close()
+
+
+if __name__ == "__main__":
+    latent_dim = 300
+    epochs = 100
+    batch_size = 100
+
+    classes = 12
+
+    input_dim = 68
+    channels = 3
+
+    train_size = 100_000
+    test_size = 30_000
+
+    # latent_dim = 10
+    #epochs, batch_size, train_size, test_size = 2, 10, 10, 10
+
+    torch.backends.cudnn.deterministic = True
+    torch.manual_seed(42)
+    torch.cuda.manual_seed(42)
+    np.random.seed(42)
+
+    from DataLoader import BBBC
+
+    main_path = "/zhome/70/5/14854/nobackup/deeplearningf22/bbbc021/singlecell/"
+    #main_path = "/Users/nikolaj/Fagprojekt/Data/"
+
+
+    exclude_dmso = False
+    shuffle = True
+
+    subset = (train_size, test_size)
+
+    dataset_train = BBBC(folder_path=main_path + "singh_cp_pipeline_singlecell_images",
+                            meta_path=main_path + "metadata.csv",
+                            subset=subset,
+                            test=False,
+                            exclude_dmso=exclude_dmso,
+                            shuffle=shuffle)
+
+    dataset_test = BBBC(folder_path=main_path + "singh_cp_pipeline_singlecell_images",
+                            meta_path=main_path + "metadata.csv",
+                            subset=subset,
+                            test=True,
+                            exclude_dmso=exclude_dmso,
+                            shuffle=shuffle)
+
+
+
+    loader_train = DataLoader(dataset_train, batch_size=batch_size, shuffle=False, drop_last=True)
+    loader_test = DataLoader(dataset_test, batch_size=batch_size, shuffle=False, drop_last=True)
+    
+
+
+    classes_, indexes = np.unique(dataset_test.meta[dataset_test.col_names[-1]], return_index=True)
+    boolean = len(classes_) == 13 if not exclude_dmso else len(classes_) == 12
+
+    if not boolean: 
+       raise Warning("The number of unique drugs in the test set is not 13")
+
+
+    print('initialized dataloaders')
+
+    VAE = Semi_supervised_VAE(classes=classes, latent_dim=latent_dim,
+                            input_dim=input_dim, channels=channels,
+                            beta=0.1).to(device)
+    
+    print('initialized VAE')
+
+    trained_encoder, trained_decoder, trained_classifier, train_REs, train_KLs, train_ELBOs = VAE.train_VAE(
+        dataloader=loader_train, epochs=epochs)
+    
+    print('trained VAE')
+
+    results_folder = 'test_run/'
+    if not(os.path.exists(results_folder)):
+        os.mkdir(results_folder)
+
+
+    test_REs, test_KLs, test_ELBOs = VAE.test_VAE(dataloader=loader_test, 
+                                                     save_latent=True,
+                                                     results_folder=results_folder)
+
+    print('tested VAE')
+
+    
+
+    train_images_folder = results_folder +'train_images/'
+
+    test_images_folder = results_folder + 'test_images/'
+
+    if not(os.path.exists(train_images_folder)):
+        os.mkdir(train_images_folder)
+
+    if not(os.path.exists(test_images_folder)):
+        os.mkdir(test_images_folder)
+
+
+    plot_ELBO(train_REs, train_KLs, train_ELBOs, 'semi', results_folder)
+
+
+    np.savez(results_folder + "train_ELBOs.npz", train_ELBOs=train_ELBOs)
+    np.savez(results_folder + "train_REs.npz", train_REs=train_REs)
+    np.savez(results_folder + "train_KLs.npz", train_KLs=train_KLs)
+    np.savez(results_folder + "test_ELBOs.npz", test_ELBOs=test_ELBOs)
+    np.savez(results_folder + "test_REs.npz", test_REs=test_REs)
+    np.savez(results_folder + "test_KLs.npz", test_KLs=test_KLs)
+
+
+    torch.save(trained_encoder, results_folder + "encoder.pt")
+    torch.save(trained_decoder, results_folder + "decoder.pt")
+    torch.save(trained_classifier, results_folder + "classifier.pt")
+
+
+    for i, image in enumerate(loader_train.dataset):
+        if i == 10:
+            break
+        plot_1_reconstruction(image['image'],
+                            vae = VAE,
+                            name="Train " + str(image['id']), 
+                            results_folder=train_images_folder, 
+                            latent_dim=latent_dim, 
+                            channels=channels, 
+                            input_dim=input_dim)
+    
+    if boolean:
+        for index in indexes:
+            image = dataset_test[index]
+            plot_1_reconstruction(image['image'],
+                                vae = VAE,
+                                name=image['moa_name'] + ' ' + str(image['id']), 
+                                results_folder=test_images_folder, 
+                                latent_dim=latent_dim, 
+                                channels=channels, 
+                                input_dim=input_dim)
+            
+    
+
+
+
+
