@@ -1,3 +1,10 @@
+############################################################################################################
+# claasifier_comparison.py
+# This script is used to compare the classifier of the CNN with the classifier of the semi-supervised VAE.
+############################################################################################################
+
+
+
 import torch
 import numpy as np
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
