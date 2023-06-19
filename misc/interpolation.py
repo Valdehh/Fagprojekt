@@ -215,7 +215,7 @@ interpolate_between_three_images(vae, 308072, 328098, 386683, main_path, 'misc/p
 ############################################################################################################
 
 
-from VAE_semi-supervised import Semi_supervised_VAE, encoder, decoder, classifier
+from vae_semi_supervised import Semi_supervised_VAE, encoder, decoder, classifier
 
 encoder_ = torch.load('/Users/nikolaj/Downloads/semi_bbbc/encoder.pt', map_location=device)
 decoder_ = torch.load('/Users/nikolaj/Downloads/semi_bbbc/decoder.pt', map_location=device)

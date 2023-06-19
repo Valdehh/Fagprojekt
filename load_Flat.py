@@ -1,3 +1,9 @@
+############################################################################################################
+# load_FLat.py
+# This script is used to build a matrix of images and labels in a flat format.
+############################################################################################################
+
+
 import os
 import numpy as np
 import pandas as pd

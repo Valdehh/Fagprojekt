@@ -1,10 +1,17 @@
+############################################################################################################
+# vae_unsupervised.py
+# This script contains the un-supervised VAE.
+############################################################################################################
+
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
-#from torchsummary import summary
+# from torchsummary import summary # isnt installed on hpc
 from tqdm import tqdm
 import os
 

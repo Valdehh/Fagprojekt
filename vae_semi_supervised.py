@@ -1,3 +1,9 @@
+############################################################################################################
+# vae_semi_supervised.py
+# This script contains the semi-supervised VAE.
+############################################################################################################
+
+
 import numpy as np
 import matplotlib.pyplot as plt
 import torch

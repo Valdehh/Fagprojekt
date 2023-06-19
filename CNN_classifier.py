@@ -1,3 +1,9 @@
+############################################################################################################
+# CNN_classifier.py
+# This script contains the classifier used to directly classify the images.
+############################################################################################################
+
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -5,7 +11,7 @@ import torch.optim as optim
 # dataloader
 from torch.utils.data import DataLoader
 import numpy as np
-from dataloader import BBBC
+from DataLoader import BBBC
 from tqdm import tqdm
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
