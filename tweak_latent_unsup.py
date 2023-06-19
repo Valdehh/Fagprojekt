@@ -15,6 +15,9 @@ model = torch.load('C:/Users/andre/OneDrive/Skrivebord/Fagprojekt/decoder.pt', m
 
 latent = np.load('latent_space_vanilla.npz')['z']
 
+#List of relevant features found after first look
+features = [8, 32, 35, 38, 45, 74, 78, 148, 129, 148, 184, 192, 196, 253, 289, 123, 298]
+
 for j in range(300):
     val=np.linspace(np.min(latent[:,j]), np.max(latent[:,j]), num=16)
     latent_tensor = torch.tensor(latent[18], device=device, dtype=torch.float)

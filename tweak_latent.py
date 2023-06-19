@@ -19,8 +19,6 @@ latent = np.load('latent_space_semi.npz')['z']
 
 #18
 
-features = [8, 32, 35, 38, 45, 74, 78, 148, 129, 148, 184, 192, 196, 253, 289, 123, 298]
-
 for j in range(300):
     val=np.linspace(np.min(latent[:,j])*2, 2*np.max(latent[:,j]), num=16)
     latent_tensor = torch.tensor(latent[0], device=device, dtype=torch.float)
