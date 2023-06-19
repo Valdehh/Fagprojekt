@@ -45,20 +45,20 @@ class BBBC(Dataset):
     
 
     def label_encoder(self, x):
-        classes = np.array(['DMSO', 'Actin disruptors', 'Aurora kinase inhibitors',
+        classes = np.array(['Actin disruptors', 'Aurora kinase inhibitors',
        'Cholesterol-lowering', 'DNA damage', 'DNA replication',
        'Eg5 inhibitors', 'Epithelial', 'Kinase inhibitors',
        'Microtubule destabilizers', 'Microtubule stabilizers',
-       'Protein degradation', 'Protein synthesis'])
+       'Protein degradation', 'Protein synthesis', 'DMSO'])
         
         return np.where(classes == x)[0][0]
     
     def label_decoder(self, x):
-        classes = np.array(['DMSO', 'Actin disruptors', 'Aurora kinase inhibitors',
+        classes = np.array(['Actin disruptors', 'Aurora kinase inhibitors',
        'Cholesterol-lowering', 'DNA damage', 'DNA replication',
        'Eg5 inhibitors', 'Epithelial', 'Kinase inhibitors',
        'Microtubule destabilizers', 'Microtubule stabilizers',
-       'Protein degradation', 'Protein synthesis'])
+       'Protein degradation', 'Protein synthesis', 'DMSO'])
         
         return classes[x]
 
@@ -141,12 +141,11 @@ class get_image_based_on_id(BBBC):
 
         return sample
     
-
 if __name__ == "__main__":
     batch_size = 5
 
     train_size = 100_000
-    test_size = 10_000
+    test_size = 30_000
 
     exclude_dmso = False
     shuffle=True
@@ -189,6 +188,8 @@ if __name__ == "__main__":
     print(dataset_train.meta[dataset_train.col_names[-1]].value_counts())
     print("Test set:")
     print(dataset_test.meta[dataset_test.col_names[-1]].value_counts())
+
+    print(5472/30000)
 
     # 157116
     # 381204

@@ -165,9 +165,7 @@ class Semi_supervised_VAE(nn.Module):
     def forward(self, x, y, save_latent=False):
         # y_onehot = nn.functional.one_hot(y, num_classes=self.classes).float()
 
-        idx =  y != 0 # "DMSO"
-        y = y - 1
-        # y_labelled = y_onehot[idx]
+        idx =  y != 12 # "DMSO"
         y_labelled = y[idx]
 
         y_hat = self.classify(x)
@@ -378,7 +376,7 @@ if __name__ == "__main__":
     epochs = 100
     batch_size = 100
 
-    classes = 13
+    classes = 12
 
     input_dim = 68
     channels = 3
@@ -387,17 +385,17 @@ if __name__ == "__main__":
     test_size = 30_000
 
     # latent_dim = 10
-    # epochs, batch_size, train_size, test_size = 2, 10, 10, 10
+    #epochs, batch_size, train_size, test_size = 2, 10, 10, 10
 
     torch.backends.cudnn.deterministic = True
     torch.manual_seed(42)
     torch.cuda.manual_seed(42)
     np.random.seed(42)
 
-    from dataloader import BBBC
+    from DataLoader import BBBC
 
     main_path = "/zhome/70/5/14854/nobackup/deeplearningf22/bbbc021/singlecell/"
-    # main_path = "/Users/nikolaj/Fagprojekt/Data/"
+    #main_path = "/Users/nikolaj/Fagprojekt/Data/"
 
 
     exclude_dmso = False
@@ -446,7 +444,7 @@ if __name__ == "__main__":
     
     print('trained VAE')
 
-    results_folder = 'semi_sup/'
+    results_folder = 'test_run/'
     if not(os.path.exists(results_folder)):
         os.mkdir(results_folder)
 
